@@ -4,15 +4,17 @@ service cloud.firestore {
   match /databases/{database}/documents {
     match /families/{familyId} {
       allow create: if signedIn()
+        && isPizzaMovieNight()
         && validFamilyShape()
         && request.resource.data.members[request.auth.uid] is map;
 
-      allow get: if signedIn() && isMember();
+      allow get: if signedIn() && isPizzaMovieNight();
       allow list: if false;
 
       allow update: if signedIn()
+        && isPizzaMovieNight()
         && validFamilyShape()
-        && (isMember() || isJoiningWithCode());
+        && request.resource.data.joinCode == resource.data.joinCode;
 
       allow delete: if false;
     }
@@ -21,16 +23,8 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isMember() {
-      return request.auth.uid in resource.data.members;
-    }
-
-    function isJoiningWithCode() {
-      return resource.data.joinCode == request.resource.data.joinCode
-        && !(request.auth.uid in resource.data.members)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'updatedAt'])
-        && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
-        && request.resource.data.members[request.auth.uid] is map;
+    function isPizzaMovieNight() {
+      return familyId == 'pizza-movie-night';
     }
 
     function validFamilyShape() {
