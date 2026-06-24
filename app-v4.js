@@ -131,14 +131,12 @@ function renderLogin(message = "") {
     button.addEventListener("click", () => {
       authMode = button.dataset.authMode;
       document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.toggle("active", item === button));
-      nameField.parentElement.hidden = authMode !== "signup";
       nameField.required = authMode === "signup";
       passwordField.autocomplete = authMode === "signup" ? "new-password" : "current-password";
       resetButton.hidden = authMode !== "signin";
       note.textContent = "";
     });
   });
-  nameField.parentElement.hidden = authMode !== "signup";
   nameField.required = authMode === "signup";
   passwordField.autocomplete = authMode === "signup" ? "new-password" : "current-password";
   resetButton.hidden = authMode !== "signin";
@@ -175,8 +173,8 @@ function renderLogin(message = "") {
         const credential = authMode === "signup"
           ? await services.authFns.createUserWithEmailAndPassword(services.auth, email, accountPassword)
           : await services.authFns.signInWithEmailAndPassword(services.auth, email, accountPassword);
-        const displayName = authMode === "signup" ? name : (credential.user.displayName || email.split("@")[0]);
-        if (authMode === "signup") {
+        const displayName = name || credential.user.displayName || email.split("@")[0];
+        if (displayName !== credential.user.displayName) {
           await services.authFns.updateProfile(credential.user, { displayName });
         }
         currentUser = { uid: credential.user.uid, displayName, email: credential.user.email || email };
