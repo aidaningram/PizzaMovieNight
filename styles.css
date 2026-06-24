@@ -229,6 +229,19 @@ label {
   border: 1px solid var(--line);
 }
 
+.text-action {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--accent-2);
+  font-weight: 900;
+}
+
+.text-action[hidden] {
+  display: none;
+}
+
 .compact-action {
   min-height: 42px;
   padding: 0 14px;

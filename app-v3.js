@@ -122,6 +122,8 @@ function renderLogin(message = "") {
   const note = document.querySelector("#login-note");
   const nameField = document.querySelector("#family-name-input");
   const passwordField = document.querySelector("#account-password-input");
+  const emailField = document.querySelector("#account-email-input");
+  const resetButton = document.querySelector("#reset-password-button");
   note.textContent = message;
 
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
@@ -132,17 +134,34 @@ function renderLogin(message = "") {
       nameField.parentElement.hidden = authMode !== "signup";
       nameField.required = authMode === "signup";
       passwordField.autocomplete = authMode === "signup" ? "new-password" : "current-password";
+      resetButton.hidden = authMode !== "signin";
       note.textContent = "";
     });
   });
   nameField.parentElement.hidden = authMode !== "signup";
   nameField.required = authMode === "signup";
   passwordField.autocomplete = authMode === "signup" ? "new-password" : "current-password";
+  resetButton.hidden = authMode !== "signin";
+
+  resetButton.addEventListener("click", async () => {
+    const email = emailField.value.trim();
+    if (!email) {
+      note.textContent = "Enter your email first, then tap Forgot password.";
+      emailField.focus();
+      return;
+    }
+    try {
+      await services.authFns.sendPasswordResetEmail(services.auth, email);
+      note.textContent = "Password reset email sent. Check your inbox.";
+    } catch (error) {
+      note.textContent = friendlyAuthError(error);
+    }
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = nameField.value.trim();
-    const email = document.querySelector("#account-email-input").value.trim();
+    const email = emailField.value.trim();
     const accountPassword = passwordField.value;
     const familyPassword = document.querySelector("#family-password-input").value;
     if (familyPassword !== FAMILY_PASSWORD) {
