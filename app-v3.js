@@ -35,7 +35,9 @@ const demoStore = {
   }
 };
 
-start();
+start().catch((error) => {
+  renderLogin(friendlyAuthError(error));
+});
 
 async function start() {
   if (!appStarted) {
@@ -85,19 +87,23 @@ async function initFirebase() {
       renderLogin();
       return;
     }
-    await enterFamilySpace(session);
+    try {
+      await enterFamilySpace(session);
+    } catch (error) {
+      renderLogin(friendlyAuthError(error));
+    }
   });
 }
 
 async function enterFamilySpace(session) {
   const familyRef = services.dbFns.doc(services.db, "families", FAMILY_ID);
-  try {
+  const snap = await services.dbFns.getDoc(familyRef);
+  if (snap.exists()) {
     await services.dbFns.updateDoc(familyRef, {
       [`members.${currentUser.uid}`]: memberRecord(),
       updatedAt: services.dbFns.serverTimestamp()
     });
-  } catch (error) {
-    if (error?.code !== "not-found") throw error;
+  } else {
     await services.dbFns.setDoc(familyRef, firebaseFamilyData());
   }
 

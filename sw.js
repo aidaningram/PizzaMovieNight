@@ -1,9 +1,9 @@
-const CACHE_NAME = "pizza-movie-night-v4";
+const CACHE_NAME = "pizza-movie-night-v5";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
-  "./app-v2.js",
+  "./app-v3.js",
   "./firebase-config.js",
   "./manifest.webmanifest",
   "./icon.svg"
