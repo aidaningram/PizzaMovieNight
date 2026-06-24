@@ -232,13 +232,21 @@ function renderWheelPage() {
   document.querySelector("#go-add-button").addEventListener("click", () => navigate("add"));
 
   const empty = activeMovies().length === 0;
+  const canAdd = canCurrentUserAddMovie();
+  const addPanel = document.querySelector("#empty-wheel-panel");
   document.querySelector("#spin-button").hidden = empty;
-  document.querySelector("#empty-wheel-panel").hidden = !empty;
+  addPanel.hidden = !canAdd;
+  if (canAdd) {
+    addPanel.querySelector("h2").textContent = empty ? "The wheel is empty." : "Add your movie.";
+    addPanel.querySelector("p").textContent = empty
+      ? "Add picks for the next pizza movie night."
+      : "You can add one movie to this wheel.";
+  }
   drawWheel();
 }
 
 function renderAddPage() {
-  if (activeMovies().length > 0) {
+  if (!canCurrentUserAddMovie()) {
     navigate("wheel");
     return;
   }
@@ -346,6 +354,8 @@ function renderMovieListItems() {
 }
 
 async function addToWheel({ title, rating, sourceListId = null }) {
+  if (!canCurrentUserAddMovie()) return;
+
   const movie = {
     id: crypto.randomUUID(),
     title,
@@ -354,7 +364,13 @@ async function addToWheel({ title, rating, sourceListId = null }) {
     suggestedByUid: currentUser.uid,
     createdAt: Date.now()
   };
-  const patch = { movies: [...activeMovies(), movie] };
+  const patch = {
+    movies: [...activeMovies(), movie],
+    roundPicks: {
+      ...roundPicks(),
+      [currentUser.uid]: true
+    }
+  };
   if (sourceListId) {
     patch.movieList = movieList().filter((item) => item.id !== sourceListId);
   }
@@ -491,8 +507,13 @@ async function confirmPicked() {
   const picked = { ...pendingWinner, pickedAt: Date.now(), round: familyData.round || 1 };
   const movies = activeMovies().filter((movie) => movie.id !== pendingWinner.id);
   const history = [...(familyData.history || []), picked];
+  const patch = { movies, history };
+  if (movies.length === 0) {
+    patch.roundPicks = {};
+    patch.round = (familyData.round || 1) + 1;
+  }
   pendingWinner = null;
-  await saveFamily({ movies, history });
+  await saveFamily(patch);
 }
 
 async function saveFamily(patch) {
@@ -515,6 +536,7 @@ function defaultFamilyData() {
     round: 1,
     members: {},
     movies: [],
+    roundPicks: {},
     movieList: [
       { id: crypto.randomUUID(), title: "Spider-Man: Into the Spider-Verse", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 5000 },
       { id: crypto.randomUUID(), title: "The Princess Bride", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 4000 },
@@ -558,6 +580,20 @@ function activeMovies() {
   return familyData?.movies || [];
 }
 
+function roundPicks() {
+  return familyData?.roundPicks || {};
+}
+
+function userHasSubmittedThisRound() {
+  if (!currentUser?.uid) return true;
+  return Boolean(roundPicks()[currentUser.uid])
+    || activeMovies().some((movie) => movie.suggestedByUid === currentUser.uid);
+}
+
+function canCurrentUserAddMovie() {
+  return !userHasSubmittedThisRound();
+}
+
 function movieList() {
   return familyData?.movieList || [];
 }
@@ -578,7 +614,7 @@ function renderAppMenu() {
   const slot = document.querySelector(".menu-slot");
   if (!slot) return;
 
-  const addIsAvailable = activeMovies().length === 0;
+  const addIsAvailable = canCurrentUserAddMovie();
   const currentRoute = routeName();
   slot.innerHTML = `
     <div class="app-menu">
@@ -593,7 +629,7 @@ function renderAppMenu() {
         <button type="button" data-menu-route="add" ${addIsAvailable ? "" : "disabled"}>Add Movies</button>
         <button type="button" data-menu-route="movie-list">Movie List</button>
         <button type="button" data-menu-action="logout">Log out</button>
-        ${addIsAvailable ? "" : `<p>Add Movies opens when the wheel is empty.</p>`}
+        ${addIsAvailable ? "" : `<p>You can add one movie per wheel. Add Movies opens again after this wheel is cleared.</p>`}
       </nav>
     </div>
   `;
