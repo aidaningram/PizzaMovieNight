@@ -1,0 +1,16 @@
+{
+  "name": "Pizza Movie Night",
+  "short_name": "Pizza Night",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#111019",
+  "theme_color": "#111019",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

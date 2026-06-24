@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#111019" />
+    <title>Pizza Movie Night</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <section class="loading-view" aria-live="polite">
+        <div class="brand-mark">PM</div>
+        <h1>Pizza Movie Night</h1>
+        <p>Loading...</p>
+      </section>
+    </div>
+
+    <template id="login-template">
+      <main class="login-screen">
+        <section class="login-copy">
+          <div class="brand-mark">PM</div>
+          <h1>Pizza Movie Night</h1>
+          <p>The family wheel lives here.</p>
+        </section>
+
+        <form id="family-login-form" class="panel form-stack">
+          <div class="segmented" role="tablist" aria-label="Account action">
+            <button type="button" class="segment active" data-auth-mode="signin">Sign in</button>
+            <button type="button" class="segment" data-auth-mode="signup">Create</button>
+          </div>
+          <label>
+            Name
+            <input id="family-name-input" autocomplete="name" required maxlength="32" placeholder="Your name" />
+          </label>
+          <label>
+            Email
+            <input id="account-email-input" type="email" autocomplete="email" required placeholder="you@example.com" />
+          </label>
+          <label>
+            Account password
+            <input id="account-password-input" type="password" autocomplete="current-password" required minlength="6" placeholder="At least 6 characters" />
+          </label>
+          <label>
+            Family password
+            <input id="family-password-input" type="password" autocomplete="current-password" required placeholder="Family password" />
+          </label>
+          <button class="primary-action" type="submit">Enter</button>
+          <p id="login-note" class="helper-text" aria-live="polite"></p>
+        </form>
+      </main>
+    </template>
+
+    <template id="home-template">
+      <main class="page page-home">
+        <header class="page-header">
+          <div class="family-title">The Ingram Family</div>
+          <div class="menu-slot"></div>
+        </header>
+
+        <section class="welcome-panel">
+          <p class="eyebrow">Family tradition</p>
+          <h1 id="welcome-title"></h1>
+          <div class="home-actions">
+            <button id="go-wheel-button" class="primary-action" type="button">Go to wheel</button>
+            <button id="go-list-button" class="secondary-action" type="button">Movie List</button>
+          </div>
+        </section>
+      </main>
+    </template>
+
+    <template id="wheel-template">
+      <main class="page">
+        <header class="page-header">
+          <div class="family-title">The Ingram Family</div>
+          <div class="menu-slot"></div>
+        </header>
+
+        <section class="wheel-page-stage">
+          <p id="round-label" class="eyebrow"></p>
+          <canvas id="wheel-canvas" width="760" height="760" aria-label="Current movie wheel"></canvas>
+          <div class="wheel-pointer" aria-hidden="true"></div>
+          <button id="spin-button" class="spin-button" type="button">Spin</button>
+        </section>
+
+        <section id="winner-panel" class="winner-panel" hidden>
+          <p class="eyebrow">Tonight's pick</p>
+          <h2 id="winner-title"></h2>
+          <p id="winner-meta"></p>
+          <button id="confirm-picked" class="primary-action" type="button">Remove from wheel</button>
+        </section>
+
+        <section id="empty-wheel-panel" class="panel empty-wheel-panel" hidden>
+          <h2>The wheel is empty.</h2>
+          <p>Add picks for the next pizza movie night.</p>
+          <button id="go-add-button" class="primary-action" type="button">Add movies to wheel</button>
+        </section>
+      </main>
+    </template>
+
+    <template id="add-template">
+      <main class="page">
+        <header class="page-header">
+          <div class="family-title">The Ingram Family</div>
+          <div class="menu-slot"></div>
+        </header>
+
+        <section class="panel form-stack">
+          <p class="eyebrow">New wheel</p>
+          <h1 class="page-title">Add movies</h1>
+          <p class="helper-text">Pick from the shared list or add a new movie. Every wheel pick needs an age rating.</p>
+        </section>
+
+        <section class="panel form-stack">
+          <h2>Add from Movie List</h2>
+          <div id="candidate-list" class="movie-list"></div>
+        </section>
+
+        <form id="custom-wheel-form" class="panel form-stack">
+          <h2>Add your own movie</h2>
+          <label>
+            Movie title
+            <input id="custom-movie-title" required maxlength="80" placeholder="Movie title" />
+          </label>
+          <label>
+            Age rating
+            <select id="custom-movie-rating" required>
+              <option value="">Select rating</option>
+              <option value="PG">PG</option>
+              <option value="PG-13">PG-13</option>
+              <option value="R">R</option>
+            </select>
+          </label>
+          <button class="primary-action" type="submit">Add to wheel</button>
+        </form>
+      </main>
+    </template>
+
+    <template id="movie-list-template">
+      <main class="page">
+        <header class="page-header">
+          <div class="family-title">The Ingram Family</div>
+          <div class="menu-slot"></div>
+        </header>
+
+        <section class="panel form-stack">
+          <p class="eyebrow">Future picks</p>
+          <h1 class="page-title">Movie List</h1>
+          <p class="helper-text">A shared parking lot for movies anyone might want later.</p>
+        </section>
+
+        <form id="movie-list-form" class="panel form-stack">
+          <label>
+            Movie title
+            <input id="movie-list-title" required maxlength="80" placeholder="Add a future movie" />
+          </label>
+          <button class="primary-action" type="submit">Add to Movie List</button>
+        </form>
+
+        <section id="movie-list-items" class="movie-list"></section>
+      </main>
+    </template>
+
+    <script type="module" src="firebase-config.js"></script>
+    <script type="module" src="app-v2.js"></script>
+  </body>
+</html>

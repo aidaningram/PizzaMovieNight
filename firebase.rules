@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /families/{familyId} {
+      allow create: if signedIn()
+        && validFamilyShape()
+        && request.resource.data.members[request.auth.uid] is map;
+
+      allow get: if signedIn() && isMember();
+      allow list: if false;
+
+      allow update: if signedIn()
+        && validFamilyShape()
+        && (isMember() || isJoiningWithCode());
+
+      allow delete: if false;
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMember() {
+      return request.auth.uid in resource.data.members;
+    }
+
+    function isJoiningWithCode() {
+      return resource.data.joinCode == request.resource.data.joinCode
+        && !(request.auth.uid in resource.data.members)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'updatedAt'])
+        && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid] is map;
+    }
+
+    function validFamilyShape() {
+      return request.resource.data.keys().hasOnly([
+        'id',
+        'name',
+        'joinCode',
+          'round',
+          'members',
+          'movies',
+          'movieList',
+          'history',
+          'createdAt',
+          'updatedAt'
+      ]);
+    }
+  }
+}

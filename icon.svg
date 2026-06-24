@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#25212f"/>
+  <circle cx="256" cy="256" r="172" fill="#fffaf0"/>
+  <path d="M256 92a164 164 0 0 1 142 82L256 256Z" fill="#f25f5c"/>
+  <path d="M398 174a164 164 0 0 1 0 164L256 256Z" fill="#ffe066"/>
+  <path d="M398 338a164 164 0 0 1-142 82V256Z" fill="#247ba0"/>
+  <path d="M256 420a164 164 0 0 1-142-82l142-82Z" fill="#70c1b3"/>
+  <path d="M114 338a164 164 0 0 1 0-164l142 82Z" fill="#9b5de5"/>
+  <path d="M114 174A164 164 0 0 1 256 92v164Z" fill="#f77f00"/>
+  <circle cx="256" cy="256" r="62" fill="#25212f"/>
+  <text x="256" y="274" text-anchor="middle" font-family="Arial, sans-serif" font-size="54" font-weight="900" fill="#fffaf0">PM</text>
+</svg>
