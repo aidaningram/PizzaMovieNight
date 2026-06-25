@@ -138,6 +138,7 @@ async function enterFamilySpace(session) {
 
 function renderLogin(message = "") {
   cleanupFamilyListener();
+  authMode = "signin";
   appRoot.replaceChildren(templates.login.content.cloneNode(true));
   const form = document.querySelector("#family-login-form");
   const note = document.querySelector("#login-note");
