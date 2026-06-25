@@ -32,7 +32,7 @@
             <button type="button" class="segment active" data-auth-mode="signin">Sign in</button>
             <button type="button" class="segment" data-auth-mode="signup">Create</button>
           </div>
-          <label>
+          <label id="name-field-wrap">
             Name
             <input id="family-name-input" autocomplete="name" required maxlength="32" placeholder="Your name" />
           </label>
@@ -44,7 +44,7 @@
             Account password
             <input id="account-password-input" type="password" autocomplete="current-password" required minlength="6" placeholder="At least 6 characters" />
           </label>
-          <label>
+          <label id="family-password-field-wrap">
             Family password
             <input id="family-password-input" type="password" autocomplete="current-password" required placeholder="Family password" />
           </label>
@@ -246,6 +246,6 @@
     </template>
 
     <script type="module" src="firebase-config.js"></script>
-    <script type="module" src="app-v15.js"></script>
+    <script type="module" src="app-v16.js"></script>
   </body>
 </html>

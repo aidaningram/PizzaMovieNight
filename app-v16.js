@@ -142,25 +142,34 @@ function renderLogin(message = "") {
   const form = document.querySelector("#family-login-form");
   const note = document.querySelector("#login-note");
   const nameField = document.querySelector("#family-name-input");
+  const nameWrap = document.querySelector("#name-field-wrap");
   const passwordField = document.querySelector("#account-password-input");
   const emailField = document.querySelector("#account-email-input");
+  const familyPasswordField = document.querySelector("#family-password-input");
+  const familyPasswordWrap = document.querySelector("#family-password-field-wrap");
   const resetButton = document.querySelector("#reset-password-button");
   note.textContent = message;
+
+  function syncAuthModeFields() {
+    const creating = authMode === "signup";
+    nameWrap.hidden = !creating;
+    familyPasswordWrap.hidden = !creating;
+    nameField.required = creating;
+    familyPasswordField.required = creating;
+    passwordField.autocomplete = creating ? "new-password" : "current-password";
+    resetButton.hidden = creating;
+  }
 
   document.querySelectorAll("[data-auth-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.authMode === authMode);
     button.addEventListener("click", () => {
       authMode = button.dataset.authMode;
       document.querySelectorAll("[data-auth-mode]").forEach((item) => item.classList.toggle("active", item === button));
-      nameField.required = authMode === "signup";
-      passwordField.autocomplete = authMode === "signup" ? "new-password" : "current-password";
-      resetButton.hidden = authMode !== "signin";
+      syncAuthModeFields();
       note.textContent = "";
     });
   });
-  nameField.required = authMode === "signup";
-  passwordField.autocomplete = authMode === "signup" ? "new-password" : "current-password";
-  resetButton.hidden = authMode !== "signin";
+  syncAuthModeFields();
 
   resetButton.addEventListener("click", async () => {
     const email = emailField.value.trim();
@@ -182,8 +191,8 @@ function renderLogin(message = "") {
     const name = nameField.value.trim();
     const email = emailField.value.trim();
     const accountPassword = passwordField.value;
-    const familyPassword = document.querySelector("#family-password-input").value;
-    if (familyPassword !== FAMILY_PASSWORD) {
+    const familyPassword = familyPasswordField.value;
+    if (authMode === "signup" && familyPassword !== FAMILY_PASSWORD) {
       note.textContent = "That is not the family password.";
       return;
     }
