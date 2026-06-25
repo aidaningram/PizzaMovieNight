@@ -601,6 +601,25 @@ label {
   color: var(--muted);
 }
 
+.review-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(21, 19, 31, 0.72);
+  color: var(--accent-2);
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .search-actions {
   display: grid;
   gap: 8px;

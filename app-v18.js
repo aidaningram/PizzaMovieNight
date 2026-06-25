@@ -476,6 +476,7 @@ function renderSearchResults(movies) {
     const item = document.createElement("article");
     item.className = "search-card";
     const poster = movie.Poster && movie.Poster !== "N/A" ? movie.Poster : "";
+    const reviewLinks = movieReviewLinks(movie);
     item.innerHTML = `
       ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder">PM</div>`}
       <div class="search-card-body">
@@ -485,6 +486,10 @@ function renderSearchResults(movies) {
           <p>${escapeHtml(movie.Genre && movie.Genre !== "N/A" ? movie.Genre : "")}</p>
         </div>
         <p>${escapeHtml(movie.Plot && movie.Plot !== "N/A" ? movie.Plot : "")}</p>
+        <div class="review-links">
+          <a href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">Rotten Tomatoes</a>
+          <a href="${reviewLinks.commonSense}" target="_blank" rel="noopener noreferrer">Common Sense Media</a>
+        </div>
         <div class="search-actions">
           <button class="secondary-action compact-action" type="button" data-add-list>Add to Movie List</button>
           <button class="primary-action compact-action" type="button" data-add-wheel ${canCurrentUserAddMovie() ? "" : "disabled"}>Add to wheel</button>
@@ -499,6 +504,14 @@ function renderSearchResults(movies) {
     });
     return item;
   }));
+}
+
+function movieReviewLinks(movie) {
+  const query = [movie.Title, movie.Year].filter((value) => value && value !== "N/A").join(" ");
+  return {
+    rottenTomatoes: `https://www.rottentomatoes.com/search?search=${encodeURIComponent(query)}`,
+    commonSense: `https://www.commonsensemedia.org/search/${encodeURIComponent(query)}`
+  };
 }
 
 function omdbMovieData(movie) {
