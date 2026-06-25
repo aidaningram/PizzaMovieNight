@@ -19,6 +19,17 @@ const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f"
 const sessionKey = "pizzaMovieSession";
 const dismissedRankingsKey = "pizzaMovieDismissedRankings";
 const OMDB_READY = Boolean(omdbApiKey && !omdbApiKey.startsWith("PASTE_"));
+const genreSearchSeeds = {
+  Action: ["mission", "war", "hero", "escape"],
+  Adventure: ["journey", "quest", "island", "treasure"],
+  Animation: ["toy", "dragon", "princess", "robot"],
+  Comedy: ["family", "wedding", "school", "holiday"],
+  Drama: ["life", "love", "home", "story"],
+  Family: ["dog", "home", "magic", "christmas"],
+  Fantasy: ["magic", "king", "dragon", "wizard"],
+  Mystery: ["murder", "secret", "detective", "missing"],
+  "Sci-Fi": ["space", "future", "alien", "robot"]
+};
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
@@ -371,7 +382,11 @@ function renderSearchPage() {
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const query = document.querySelector("#movie-search-input").value.trim();
-    if (!query) return;
+    const genre = document.querySelector("#movie-genre-filter").value;
+    if (!query && !genre) {
+      note.textContent = "Enter a title or choose a genre.";
+      return;
+    }
     if (!OMDB_READY) {
       note.textContent = "Add your OMDb API key in omdb-config.js to turn on search.";
       return;
@@ -380,7 +395,7 @@ function renderSearchPage() {
     note.textContent = "Searching...";
     results.innerHTML = "";
     try {
-      const movies = await searchOmdb(query);
+      const movies = query ? await searchOmdb(query) : await searchOmdbByGenre(genre);
       const filtered = filterOmdbResults(movies);
       renderSearchResults(filtered);
       note.textContent = filtered.length ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}` : "No movies matched those filters.";
@@ -402,6 +417,20 @@ async function searchOmdb(query) {
 
   const results = (data.Search || []).slice(0, 10);
   return Promise.all(results.map((movie) => fetchOmdbDetails(movie.imdbID)));
+}
+
+async function searchOmdbByGenre(genre) {
+  const seeds = genreSearchSeeds[genre] || [genre];
+  const resultGroups = await Promise.all(seeds.map((seed) => searchOmdb(seed)));
+  const seen = new Set();
+  return resultGroups
+    .flat()
+    .filter((movie) => {
+      if (!movie?.imdbID || seen.has(movie.imdbID)) return false;
+      seen.add(movie.imdbID);
+      return true;
+    })
+    .slice(0, 20);
 }
 
 async function fetchOmdbDetails(imdbID) {
