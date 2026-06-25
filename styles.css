@@ -308,6 +308,18 @@ label {
   flex: 0 0 52px;
 }
 
+.back-button {
+  width: 46px;
+  min-height: 46px;
+  border-radius: 999px;
+  background: rgba(43, 38, 56, 0.96);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  font-size: 2rem;
+  line-height: 1;
+}
+
 .menu-toggle {
   position: relative;
   z-index: 7;
@@ -568,6 +580,7 @@ label {
   border-radius: 8px;
   background: rgba(33, 30, 45, 0.88);
   box-shadow: var(--shadow);
+  cursor: pointer;
 }
 
 .search-card img,
@@ -640,6 +653,57 @@ label {
 .search-actions {
   display: grid;
   gap: 8px;
+}
+
+.movie-detail-card {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.movie-detail-poster {
+  width: min(100%, 240px);
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  justify-self: center;
+}
+
+.movie-detail-body {
+  display: grid;
+  gap: 14px;
+}
+
+.movie-detail-body > p:not(.eyebrow) {
+  color: var(--muted);
+}
+
+.movie-facts {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.movie-facts div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(65, 56, 79, 0.72);
+}
+
+.movie-facts dt {
+  color: var(--accent-2);
+  font-weight: 950;
+}
+
+.movie-facts dd {
+  margin: 0;
+  color: var(--muted);
 }
 
 .ranking-card {
@@ -806,6 +870,15 @@ label {
   .search-card img,
   .poster-placeholder {
     width: 105px;
+  }
+
+  .movie-detail-card {
+    grid-template-columns: 210px 1fr;
+    align-items: start;
+  }
+
+  .movie-detail-poster {
+    width: 210px;
   }
 
   .candidate-item {

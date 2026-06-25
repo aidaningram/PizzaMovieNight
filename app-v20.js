@@ -12,12 +12,14 @@ const templates = {
   add: document.querySelector("#add-template"),
   movieList: document.querySelector("#movie-list-template"),
   search: document.querySelector("#search-template"),
+  movieDetail: document.querySelector("#movie-detail-template"),
   rankings: document.querySelector("#rankings-template"),
   members: document.querySelector("#members-template")
 };
 const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
 const sessionKey = "pizzaMovieSession";
 const dismissedRankingsKey = "pizzaMovieDismissedRankings";
+const selectedMovieKey = "pizzaMovieSelectedMovie";
 const OMDB_READY = Boolean(omdbApiKey && !omdbApiKey.startsWith("PASTE_"));
 const genreSearchSeeds = {
   Action: ["mission", "war", "hero", "escape"],
@@ -243,6 +245,7 @@ function renderRoute() {
   else if (route === "add") renderAddPage();
   else if (route === "movie-list") renderMovieListPage();
   else if (route === "search") renderSearchPage();
+  else if (route === "movie-detail") renderMovieDetailPage();
   else if (route === "rankings") renderRankingsPage();
   else if (route === "members") renderMembersPage();
   else renderHomePage();
@@ -475,6 +478,9 @@ function renderSearchResults(movies) {
   results.replaceChildren(...movies.map((movie) => {
     const item = document.createElement("article");
     item.className = "search-card";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", `Open details for ${movie.Title}`);
     const poster = movie.Poster && movie.Poster !== "N/A" ? movie.Poster : "";
     const reviewLinks = movieReviewLinks(movie);
     item.innerHTML = `
@@ -503,6 +509,16 @@ function renderSearchResults(movies) {
       </div>
     `;
     const movieData = omdbMovieData(movie);
+    item.addEventListener("click", () => openMovieDetail(movieData));
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMovieDetail(movieData);
+      }
+    });
+    item.querySelectorAll("a, button").forEach((control) => {
+      control.addEventListener("click", (event) => event.stopPropagation());
+    });
     item.querySelector("[data-add-list]").addEventListener("click", () => addSearchMovieToList(movieData));
     item.querySelector("[data-add-wheel]").addEventListener("click", async () => {
       await addToWheel(movieData);
@@ -510,6 +526,82 @@ function renderSearchResults(movies) {
     });
     return item;
   }));
+}
+
+function openMovieDetail(movie) {
+  sessionStorage.setItem(selectedMovieKey, JSON.stringify(movie));
+  navigate("movie-detail");
+}
+
+function renderMovieDetailPage() {
+  appRoot.replaceChildren(templates.movieDetail.content.cloneNode(true));
+  renderAppMenu();
+
+  const movie = readSelectedMovie();
+  const container = document.querySelector("#movie-detail-content");
+  document.querySelector("#movie-detail-back").addEventListener("click", () => history.back());
+
+  if (!movie) {
+    container.innerHTML = `<div class="empty-state">Pick a movie from search to see details.</div>`;
+    return;
+  }
+
+  const reviewLinks = movieReviewLinks({ Title: movie.title, Year: movie.year });
+  const poster = movie.poster && movie.poster !== "N/A" ? movie.poster : "";
+  container.innerHTML = `
+    <article class="movie-detail-card">
+      ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder">PM</div>`}
+      <div class="movie-detail-body">
+        <p class="eyebrow">${escapeHtml([movie.year, movie.rated, movie.runtime].filter(isRealValue).join(" • "))}</p>
+        <h1 class="page-title">${escapeHtml(movie.title)}</h1>
+        <p>${escapeHtml(movie.plot && movie.plot !== "N/A" ? movie.plot : "No plot available.")}</p>
+        <dl class="movie-facts">
+          ${movieFact("Genre", movie.genre)}
+          ${movieFact("Actors", movie.actors)}
+          ${movieFact("Director", movie.director)}
+          ${movieFact("Writer", movie.writer)}
+          ${movieFact("IMDb", movie.imdbRating && movie.imdbRating !== "N/A" ? `${movie.imdbRating}/10` : "")}
+          ${movieFact("Awards", movie.awards)}
+        </dl>
+        <div class="review-links">
+          <a class="review-link review-link-rt" href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">
+            <img src="https://www.google.com/s2/favicons?domain=rottentomatoes.com&sz=64" alt="" loading="lazy" />
+            Rotten Tomatoes
+          </a>
+          <a class="review-link review-link-csm" href="${reviewLinks.commonSense}" target="_blank" rel="noopener noreferrer">
+            <img src="https://www.google.com/s2/favicons?domain=commonsensemedia.org&sz=64" alt="" loading="lazy" />
+            Common Sense
+          </a>
+        </div>
+        <div class="search-actions">
+          <button id="detail-add-list" class="secondary-action compact-action" type="button">Add to Movie List</button>
+          <button id="detail-add-wheel" class="primary-action compact-action" type="button" ${canCurrentUserAddMovie() ? "" : "disabled"}>Add to wheel</button>
+        </div>
+      </div>
+    </article>
+  `;
+  document.querySelector("#detail-add-list").addEventListener("click", () => addSearchMovieToList(movie));
+  document.querySelector("#detail-add-wheel").addEventListener("click", async () => {
+    await addToWheel(movie);
+    navigate("wheel");
+  });
+}
+
+function movieFact(label, value) {
+  if (!isRealValue(value)) return "";
+  return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+}
+
+function isRealValue(value) {
+  return Boolean(value && value !== "N/A");
+}
+
+function readSelectedMovie() {
+  try {
+    return JSON.parse(sessionStorage.getItem(selectedMovieKey) || "null");
+  } catch {
+    return null;
+  }
 }
 
 function movieReviewLinks(movie) {
@@ -530,6 +622,11 @@ function omdbMovieData(movie) {
     runtime: movie.Runtime,
     poster: movie.Poster,
     plot: movie.Plot,
+    actors: movie.Actors,
+    director: movie.Director,
+    writer: movie.Writer,
+    imdbRating: movie.imdbRating,
+    awards: movie.Awards,
     source: "omdb"
   };
 }
