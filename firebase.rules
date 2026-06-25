@@ -36,6 +36,8 @@ service cloud.firestore {
           'members',
           'movies',
           'roundPicks',
+          'spinReady',
+          'spinState',
           'movieList',
           'history',
           'createdAt',

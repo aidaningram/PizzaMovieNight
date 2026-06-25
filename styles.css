@@ -458,14 +458,26 @@ label {
 }
 
 .winner-panel,
-.empty-wheel-panel {
+.empty-wheel-panel,
+.spin-status {
   display: grid;
   gap: 10px;
 }
 
 .winner-panel[hidden],
-.empty-wheel-panel[hidden] {
+.empty-wheel-panel[hidden],
+.spin-status[hidden] {
   display: none;
+}
+
+.spin-status {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.68);
+  color: var(--muted);
+  font-weight: 850;
+  text-align: center;
 }
 
 .movie-list {

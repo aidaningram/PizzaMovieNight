@@ -13,6 +13,9 @@ const templates = {
 };
 const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
 const sessionKey = "pizzaMovieSession";
+const SPIN_DURATION_MS = 9000;
+const SPIN_LEAD_MS = 1400;
+const POINTER_ANGLE = Math.PI * 1.5;
 
 let services = null;
 let currentUser = null;
@@ -22,6 +25,7 @@ let pendingWinner = null;
 let appStarted = false;
 let authMode = "signin";
 let authReady = false;
+let activeSpinAnimationId = null;
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -226,22 +230,25 @@ function renderHomePage() {
 function renderWheelPage() {
   appRoot.replaceChildren(templates.wheel.content.cloneNode(true));
   renderAppMenu();
-  document.querySelector("#spin-button").addEventListener("click", spinWheel);
+  document.querySelector("#spin-button").addEventListener("click", requestSpin);
   document.querySelector("#confirm-picked").addEventListener("click", confirmPicked);
   document.querySelector("#go-add-button").addEventListener("click", () => navigate("add"));
 
   const empty = activeMovies().length === 0;
   const canAdd = canCurrentUserAddMovie();
+  const spinActive = isSpinActive();
   const addPanel = document.querySelector("#empty-wheel-panel");
   document.querySelector("#spin-button").hidden = empty;
-  addPanel.hidden = !canAdd;
+  addPanel.hidden = !canAdd || spinActive;
   if (canAdd) {
     addPanel.querySelector("h2").textContent = empty ? "The wheel is empty." : "Add your movie.";
     addPanel.querySelector("p").textContent = empty
       ? "Add picks for the next pizza movie night."
       : "You can add one movie to this wheel.";
   }
+  updateSpinUi();
   drawWheel();
+  syncSharedSpin();
 }
 
 function renderAddPage() {
@@ -349,6 +356,8 @@ async function addToWheel({ title, sourceListId = null }) {
   };
   const patch = {
     movies: [...activeMovies(), movie],
+    spinReady: {},
+    spinState: null,
     roundPicks: {
       ...roundPicks(),
       [currentUser.uid]: true
@@ -460,30 +469,110 @@ function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
 }
 
 function spinWheel() {
-  const movies = activeMovies();
-  if (!movies.length) return;
-  const spinButton = document.querySelector("#spin-button");
-  spinButton.disabled = true;
-  const winnerIndex = Math.floor(Math.random() * movies.length);
-  const slice = (Math.PI * 2) / movies.length;
-  const target = Math.PI * 6 + (Math.PI * 1.5 - (winnerIndex * slice + slice / 2));
-  const start = performance.now();
-  const duration = 3200;
+  requestSpin();
+}
 
-  function animate(now) {
-    const progress = Math.min(1, (now - start) / duration);
-    const eased = 1 - Math.pow(1 - progress, 4);
-    drawWheel(target * eased);
+async function requestSpin() {
+  const movies = activeMovies();
+  if (!movies.length || !currentUser?.uid || isSpinActive()) return;
+
+  const ready = {
+    ...spinReady(),
+    [currentUser.uid]: true
+  };
+  const patch = { spinReady: ready };
+
+  if (everyoneReady(ready)) {
+    const finalRotation = randomFinalRotation();
+    patch.spinState = {
+      id: crypto.randomUUID(),
+      startedAt: Date.now() + SPIN_LEAD_MS,
+      duration: SPIN_DURATION_MS,
+      finalRotation,
+      movieIds: movies.map((movie) => movie.id)
+    };
+  }
+
+  await saveFamily(patch);
+}
+
+function updateSpinUi() {
+  const button = document.querySelector("#spin-button");
+  const status = document.querySelector("#spin-status");
+  if (!button || !status) return;
+
+  const movies = activeMovies();
+  const memberCount = familyMemberIds().length;
+  const readyCount = readyMemberCount();
+  const spinActive = isSpinActive();
+  const userReady = Boolean(spinReady()[currentUser?.uid]);
+
+  button.disabled = spinActive || userReady || !movies.length;
+  button.textContent = spinActive ? "Spinning" : userReady ? "Waiting" : "I'm Ready";
+
+  if (!movies.length) {
+    status.hidden = true;
+    return;
+  }
+
+  status.hidden = false;
+  status.textContent = spinActive
+    ? "Spinning together..."
+    : `${readyCount} of ${memberCount} ready to spin`;
+}
+
+function syncSharedSpin() {
+  const spin = familyData?.spinState;
+  if (!spin?.id || !activeMovies().length) {
+    activeSpinAnimationId = null;
+    return;
+  }
+
+  if (activeSpinAnimationId === spin.id) return;
+  activeSpinAnimationId = spin.id;
+
+  const startedAt = Number(spin.startedAt) || Date.now();
+  const duration = Number(spin.duration) || SPIN_DURATION_MS;
+  const finalRotation = Number(spin.finalRotation) || 0;
+  const winner = movieFromRotation(finalRotation, activeMovies());
+
+  function animate() {
+    if (activeSpinAnimationId !== spin.id || familyData?.spinState?.id !== spin.id) return;
+
+    const elapsed = Date.now() - startedAt;
+    const progress = Math.min(1, Math.max(0, elapsed / duration));
+    const eased = 1 - Math.pow(1 - progress, 5);
+    drawWheel(finalRotation * eased);
+
     if (progress < 1) {
       requestAnimationFrame(animate);
       return;
     }
-    pendingWinner = movies[winnerIndex];
-    showWinner(pendingWinner);
-    spinButton.disabled = false;
+
+    pendingWinner = winner;
+    if (winner) showWinner(winner);
+    updateSpinUi();
   }
 
-  requestAnimationFrame(animate);
+  animate();
+}
+
+function randomFinalRotation() {
+  const fullSpins = 9 + Math.floor(Math.random() * 5);
+  const randomLandingAngle = Math.random() * Math.PI * 2;
+  return (fullSpins * Math.PI * 2) + randomLandingAngle;
+}
+
+function movieFromRotation(rotation, movies) {
+  if (!movies.length) return null;
+  const slice = (Math.PI * 2) / movies.length;
+  const landedAngle = normalizeAngle(POINTER_ANGLE - normalizeAngle(rotation));
+  return movies[Math.floor(landedAngle / slice)] || movies[0];
+}
+
+function normalizeAngle(angle) {
+  const full = Math.PI * 2;
+  return ((angle % full) + full) % full;
 }
 
 function showWinner(movie) {
@@ -497,7 +586,7 @@ async function confirmPicked() {
   const picked = { ...pendingWinner, pickedAt: Date.now(), round: familyData.round || 1 };
   const movies = activeMovies().filter((movie) => movie.id !== pendingWinner.id);
   const history = [...(familyData.history || []), picked];
-  const patch = { movies, history };
+  const patch = { movies, history, spinReady: {}, spinState: null };
   if (movies.length === 0) {
     patch.roundPicks = {};
     patch.round = (familyData.round || 1) + 1;
@@ -527,6 +616,8 @@ function defaultFamilyData() {
     members: {},
     movies: [],
     roundPicks: {},
+    spinReady: {},
+    spinState: null,
     movieList: [
       { id: crypto.randomUUID(), title: "Spider-Man: Into the Spider-Verse", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 5000 },
       { id: crypto.randomUUID(), title: "The Princess Bride", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 4000 },
@@ -572,6 +663,32 @@ function activeMovies() {
 
 function roundPicks() {
   return familyData?.roundPicks || {};
+}
+
+function spinReady() {
+  return familyData?.spinReady || {};
+}
+
+function familyMemberIds() {
+  return Object.keys(familyData?.members || {});
+}
+
+function readyMemberCount(ready = spinReady()) {
+  const members = familyMemberIds();
+  return members.filter((uid) => ready[uid]).length;
+}
+
+function everyoneReady(ready = spinReady()) {
+  const members = familyMemberIds();
+  return members.length > 0 && members.every((uid) => ready[uid]);
+}
+
+function isSpinActive() {
+  const spin = familyData?.spinState;
+  if (!spin?.id) return false;
+  const startedAt = Number(spin.startedAt) || Date.now();
+  const duration = Number(spin.duration) || SPIN_DURATION_MS;
+  return Date.now() < startedAt + duration + 1000;
 }
 
 function userHasSubmittedThisRound() {
