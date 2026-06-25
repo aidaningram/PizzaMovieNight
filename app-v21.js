@@ -483,6 +483,7 @@ function renderSearchResults(movies) {
     item.setAttribute("aria-label", `Open details for ${movie.Title}`);
     const poster = movie.Poster && movie.Poster !== "N/A" ? movie.Poster : "";
     const reviewLinks = movieReviewLinks(movie);
+    const recommendation = recommendationForMovie(movie);
     item.innerHTML = `
       ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder">PM</div>`}
       <div class="search-card-body">
@@ -492,6 +493,7 @@ function renderSearchResults(movies) {
           <p>${escapeHtml(movie.Genre && movie.Genre !== "N/A" ? movie.Genre : "")}</p>
         </div>
         <p>${escapeHtml(movie.Plot && movie.Plot !== "N/A" ? movie.Plot : "")}</p>
+        ${recommendation ? recommendationMarkup(recommendation) : ""}
         <div class="review-links">
           <a class="review-link review-link-rt" href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">
             <img src="https://www.google.com/s2/favicons?domain=rottentomatoes.com&sz=64" alt="" loading="lazy" />
@@ -547,6 +549,7 @@ function renderMovieDetailPage() {
   }
 
   const reviewLinks = movieReviewLinks({ Title: movie.title, Year: movie.year });
+  const recommendation = recommendationForMovie(movie);
   const poster = movie.poster && movie.poster !== "N/A" ? movie.poster : "";
   container.innerHTML = `
     <article class="movie-detail-card">
@@ -555,6 +558,7 @@ function renderMovieDetailPage() {
         <p class="eyebrow">${escapeHtml([movie.year, movie.rated, movie.runtime].filter(isRealValue).join(" • "))}</p>
         <h1 class="page-title">${escapeHtml(movie.title)}</h1>
         <p>${escapeHtml(movie.plot && movie.plot !== "N/A" ? movie.plot : "No plot available.")}</p>
+        ${recommendation ? recommendationMarkup(recommendation) : ""}
         <dl class="movie-facts">
           ${movieFact("Genre", movie.genre)}
           ${movieFact("Actors", movie.actors)}
@@ -610,6 +614,15 @@ function movieReviewLinks(movie) {
     rottenTomatoes: `https://www.rottentomatoes.com/search?search=${encodeURIComponent(query)}`,
     commonSense: `https://www.commonsensemedia.org/search/${encodeURIComponent(query)}`
   };
+}
+
+function recommendationMarkup(recommendation) {
+  return `
+    <div class="recommendation-pill">
+      <strong>${recommendation.label}</strong>
+      <span>${escapeHtml(recommendation.reasons.join(" • "))}</span>
+    </div>
+  `;
 }
 
 function omdbMovieData(movie) {
@@ -1164,6 +1177,135 @@ function averageRating(movie) {
     .filter((score) => Number.isFinite(score) && score > 0);
   if (!scores.length) return 0;
   return scores.reduce((total, score) => total + score, 0) / scores.length;
+}
+
+function recommendationForMovie(movie) {
+  const profile = recommendationProfile();
+  if (!profile.count) return null;
+
+  const reasons = [];
+  let score = 50;
+  score += scoreListMatches(splitList(movie.genre || movie.Genre), profile.genres, reasons, "genre");
+  score += scoreListMatches(splitList(movie.actors || movie.Actors), profile.actors, reasons, "actor");
+  score += scoreListMatches(splitList(movie.director || movie.Director), profile.directors, reasons, "director");
+  score += scoreListMatches(splitList(movie.writer || movie.Writer), profile.writers, reasons, "writer");
+
+  const rated = movie.rated || movie.Rated;
+  if (rated && profile.ratings[rated]) {
+    const ratingScore = preferenceScore(profile.ratings[rated]);
+    score += ratingScore * 5;
+    if (ratingScore > 0.5) reasons.push(`${rated} has worked well`);
+    if (ratingScore < -0.5) reasons.push(`${rated} has been mixed`);
+  }
+
+  const runtime = parseRuntime(movie.runtime || movie.Runtime);
+  if (runtime && profile.runtime.average) {
+    const distance = Math.abs(runtime - profile.runtime.average);
+    if (distance <= 20) {
+      score += 5;
+      reasons.push("runtime fits past favorites");
+    } else if (distance > 55) {
+      score -= 4;
+    }
+  }
+
+  const imdb = Number(movie.imdbRating);
+  if (Number.isFinite(imdb)) {
+    if (imdb >= 7.5) {
+      score += 4;
+      reasons.push("strong IMDb score");
+    } else if (imdb < 5.5) {
+      score -= 5;
+    }
+  }
+
+  if (profile.favorites.some((favorite) => sameMovie(favorite, movie))) {
+    score += 8;
+    reasons.push("similar to a family favorite");
+  }
+
+  const bounded = Math.max(0, Math.min(100, Math.round(score)));
+  if (bounded < 58 && !reasons.length) return null;
+  return {
+    score: bounded,
+    label: `${bounded}% family fit`,
+    reasons: reasons.slice(0, 3)
+  };
+}
+
+function recommendationProfile() {
+  const profile = {
+    count: 0,
+    genres: {},
+    actors: {},
+    directors: {},
+    writers: {},
+    ratings: {},
+    runtime: { total: 0, count: 0, average: 0 },
+    favorites: []
+  };
+
+  historyMovies().forEach((movie) => {
+    const average = averageRating(movie);
+    if (!average) return;
+    profile.count += 1;
+    const weight = average - 3;
+    addPreference(profile.genres, splitList(movie.genre), weight);
+    addPreference(profile.actors, splitList(movie.actors), weight * 0.8);
+    addPreference(profile.directors, splitList(movie.director), weight);
+    addPreference(profile.writers, splitList(movie.writer), weight * 0.7);
+    addPreference(profile.ratings, [movie.rated], weight * 0.6);
+    const runtime = parseRuntime(movie.runtime);
+    if (runtime && average >= 4) {
+      profile.runtime.total += runtime;
+      profile.runtime.count += 1;
+    }
+    if (average >= 4.25) profile.favorites.push(movie);
+  });
+
+  profile.runtime.average = profile.runtime.count ? profile.runtime.total / profile.runtime.count : 0;
+  return profile;
+}
+
+function addPreference(bucket, values, weight) {
+  values.filter(isRealValue).forEach((value) => {
+    bucket[value] = bucket[value] || { total: 0, count: 0 };
+    bucket[value].total += weight;
+    bucket[value].count += 1;
+  });
+}
+
+function scoreListMatches(values, bucket, reasons, label) {
+  return values.reduce((total, value) => {
+    const preference = bucket[value];
+    if (!preference) return total;
+    const itemScore = preferenceScore(preference);
+    if (itemScore > 0.65 && reasons.length < 3) reasons.push(`liked ${label}: ${value}`);
+    return total + itemScore * 7;
+  }, 0);
+}
+
+function preferenceScore(preference) {
+  return preference.total / Math.max(1, preference.count);
+}
+
+function splitList(value = "") {
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseRuntime(value = "") {
+  const match = String(value).match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function sameMovie(a, b) {
+  if (a.imdbID && b.imdbID) return a.imdbID === b.imdbID;
+  const aTitle = String(a.title || a.Title || "").toLowerCase();
+  const bTitle = String(b.title || b.Title || "").toLowerCase();
+  return aTitle && aTitle === bTitle;
 }
 
 function starText(score) {

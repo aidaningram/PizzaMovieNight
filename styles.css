@@ -620,6 +620,26 @@ label {
   gap: 8px;
 }
 
+.recommendation-pill {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid rgba(244, 162, 97, 0.36);
+  border-radius: 8px;
+  background: rgba(244, 162, 97, 0.12);
+}
+
+.recommendation-pill strong {
+  color: var(--accent-2);
+  font-weight: 950;
+}
+
+.recommendation-pill span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
 .review-link {
   display: inline-flex;
   align-items: center;
