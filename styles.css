@@ -440,15 +440,21 @@ label {
 
 .spin-button {
   position: absolute;
-  top: calc(50% - 28px);
-  left: calc(50% - 46px);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: 92px;
   height: 92px;
   border-radius: 999px;
   background: #111019;
   color: var(--ink);
   border: 4px solid var(--ink);
-  font-size: 1rem;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  text-align: center;
+  line-height: 1.05;
+  font-size: 0.95rem;
   font-weight: 950;
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.36);
 }
