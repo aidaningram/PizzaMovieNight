@@ -515,7 +515,7 @@ function updateSpinUi() {
   const userReady = Boolean(spinReady()[currentUser?.uid]);
 
   button.disabled = spinActive || !movies.length;
-  button.textContent = spinActive ? "Spinning" : userReady ? "Unready" : "I'm Ready";
+  button.textContent = spinActive ? "Spinning" : userReady ? "Unready" : "Spin";
 
   if (!movies.length) {
     status.hidden = true;
