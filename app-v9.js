@@ -478,8 +478,15 @@ async function requestSpin() {
 
   const ready = {
     ...spinReady(),
-    [currentUser.uid]: true
   };
+
+  if (ready[currentUser.uid]) {
+    delete ready[currentUser.uid];
+    await saveFamily({ spinReady: ready });
+    return;
+  }
+
+  ready[currentUser.uid] = true;
   const patch = { spinReady: ready };
 
   if (everyoneReady(ready)) {
@@ -507,8 +514,8 @@ function updateSpinUi() {
   const spinActive = isSpinActive();
   const userReady = Boolean(spinReady()[currentUser?.uid]);
 
-  button.disabled = spinActive || userReady || !movies.length;
-  button.textContent = spinActive ? "Spinning" : userReady ? "Waiting" : "I'm Ready";
+  button.disabled = spinActive || !movies.length;
+  button.textContent = spinActive ? "Spinning" : userReady ? "Unready" : "I'm Ready";
 
   if (!movies.length) {
     status.hidden = true;
@@ -516,9 +523,13 @@ function updateSpinUi() {
   }
 
   status.hidden = false;
-  status.textContent = spinActive
-    ? "Spinning together..."
-    : `${readyCount} of ${memberCount} ready to spin`;
+  if (spinActive) {
+    status.textContent = "Spinning together...";
+  } else if (userReady) {
+    status.textContent = `You're ready. ${readyCount} of ${memberCount} ready to spin`;
+  } else {
+    status.textContent = `${readyCount} of ${memberCount} ready to spin`;
+  }
 }
 
 function syncSharedSpin() {

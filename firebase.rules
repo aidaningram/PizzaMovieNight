@@ -3,46 +3,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /families/{familyId} {
-      allow create: if signedIn()
-        && isPizzaMovieNight()
-        && validFamilyShape()
-        && request.resource.data.members[request.auth.uid] is map;
-
-      allow get: if signedIn() && isPizzaMovieNight();
-      allow list: if false;
-
-      allow update: if signedIn()
-        && isPizzaMovieNight()
-        && validFamilyShape()
-        && request.resource.data.joinCode == resource.data.joinCode;
-
-      allow delete: if false;
-    }
-
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isPizzaMovieNight() {
-      return familyId == 'pizza-movie-night';
-    }
-
-    function validFamilyShape() {
-      return request.resource.data.keys().hasOnly([
-        'id',
-        'name',
-        'joinCode',
-          'round',
-          'members',
-          'movies',
-          'roundPicks',
-          'spinReady',
-          'spinState',
-          'movieList',
-          'history',
-          'createdAt',
-          'updatedAt'
-      ]);
+      allow read, write: if request.auth != null
+        && familyId == 'pizza-movie-night';
     }
   }
 }
