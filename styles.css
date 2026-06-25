@@ -120,7 +120,7 @@ h3 {
 
 .page {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto;
   align-content: start;
   gap: 18px;
   width: min(100%, 720px);
@@ -130,6 +130,7 @@ h3 {
 
 .page-home {
   align-content: start;
+  grid-template-rows: auto 1fr;
 }
 
 .login-copy,
