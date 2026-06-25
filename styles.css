@@ -607,17 +607,33 @@ label {
   gap: 8px;
 }
 
-.review-links a {
+.review-link {
   display: inline-flex;
   align-items: center;
+  gap: 7px;
   min-height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(21, 19, 31, 0.72);
-  color: var(--accent-2);
   font-weight: 900;
   text-decoration: none;
+}
+
+.review-link img {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+}
+
+.review-link-rt {
+  border: 1px solid rgba(250, 50, 46, 0.45);
+  background: rgba(250, 50, 46, 0.14);
+  color: #ff928c;
+}
+
+.review-link-csm {
+  border: 1px solid rgba(26, 170, 90, 0.45);
+  background: rgba(26, 170, 90, 0.15);
+  color: #81dfa7;
 }
 
 .search-actions {

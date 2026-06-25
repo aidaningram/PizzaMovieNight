@@ -487,8 +487,14 @@ function renderSearchResults(movies) {
         </div>
         <p>${escapeHtml(movie.Plot && movie.Plot !== "N/A" ? movie.Plot : "")}</p>
         <div class="review-links">
-          <a href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">Rotten Tomatoes</a>
-          <a href="${reviewLinks.commonSense}" target="_blank" rel="noopener noreferrer">Common Sense Media</a>
+          <a class="review-link review-link-rt" href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">
+            <img src="https://www.google.com/s2/favicons?domain=rottentomatoes.com&sz=64" alt="" loading="lazy" />
+            Rotten Tomatoes
+          </a>
+          <a class="review-link review-link-csm" href="${reviewLinks.commonSense}" target="_blank" rel="noopener noreferrer">
+            <img src="https://www.google.com/s2/favicons?domain=commonsensemedia.org&sz=64" alt="" loading="lazy" />
+            Common Sense
+          </a>
         </div>
         <div class="search-actions">
           <button class="secondary-action compact-action" type="button" data-add-list>Add to Movie List</button>
