@@ -667,6 +667,7 @@ function renderAppMenu() {
 }
 
 function logout() {
+  if (!window.confirm("Are you sure you want to log out?")) return;
   cleanupFamilyListener();
   localStorage.removeItem(sessionKey);
   currentUser = null;
