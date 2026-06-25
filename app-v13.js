@@ -598,11 +598,17 @@ async function requestSpin() {
   const movies = activeMovies();
   if (!movies.length || !currentUser?.uid || isSpinActive()) return;
 
+  if (FIREBASE_READY) {
+    await requestSpinTransaction();
+    return;
+  }
+
   const ready = {
     ...spinReady(),
   };
 
   if (ready[currentUser.uid]) {
+    if (everyoneReady(ready)) return;
     delete ready[currentUser.uid];
     await saveFamily({ spinReady: ready });
     return;
@@ -625,6 +631,53 @@ async function requestSpin() {
   await saveFamily(patch);
 }
 
+async function requestSpinTransaction() {
+  const familyRef = services.dbFns.doc(services.db, "families", FAMILY_ID);
+  await services.dbFns.runTransaction(services.db, async (transaction) => {
+    const snap = await transaction.get(familyRef);
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    const movies = data.movies || [];
+    const members = Object.keys(data.members || {});
+    const participants = members.length ? members : [currentUser.uid];
+    const ready = { ...(data.spinReady || {}) };
+    const spin = data.spinState;
+
+    if (!movies.length || !currentUser?.uid || remoteSpinIsActive(spin)) return;
+
+    const allReady = participants.length > 0 && participants.every((uid) => ready[uid]);
+    if (ready[currentUser.uid]) {
+      if (allReady) return;
+      delete ready[currentUser.uid];
+      transaction.update(familyRef, {
+        spinReady: ready,
+        updatedAt: services.dbFns.serverTimestamp()
+      });
+      return;
+    }
+
+    ready[currentUser.uid] = true;
+    const patch = {
+      spinReady: ready,
+      updatedAt: services.dbFns.serverTimestamp()
+    };
+
+    if (participants.every((uid) => ready[uid])) {
+      const finalRotation = randomFinalRotation();
+      patch.spinState = {
+        id: crypto.randomUUID(),
+        startedAt: Date.now() + SPIN_LEAD_MS,
+        duration: SPIN_DURATION_MS,
+        finalRotation,
+        movieIds: movies.map((movie) => movie.id)
+      };
+    }
+
+    transaction.update(familyRef, patch);
+  });
+}
+
 function updateSpinUi() {
   const button = document.querySelector("#spin-button");
   const status = document.querySelector("#spin-status");
@@ -635,9 +688,10 @@ function updateSpinUi() {
   const readyCount = readyMemberCount();
   const spinActive = isSpinActive();
   const userReady = Boolean(spinReady()[currentUser?.uid]);
+  const allReady = everyoneReady();
 
-  button.disabled = spinActive || !movies.length;
-  button.textContent = spinActive ? "Spinning" : userReady ? "Unready" : "Spin";
+  button.disabled = spinActive || allReady || !movies.length;
+  button.textContent = spinActive || allReady ? "Spinning" : userReady ? "Unready" : "Spin";
 
   if (!movies.length) {
     status.hidden = true;
@@ -645,7 +699,7 @@ function updateSpinUi() {
   }
 
   status.hidden = false;
-  if (spinActive) {
+  if (spinActive || allReady) {
     status.textContent = "Spinning together...";
   } else if (userReady) {
     status.textContent = `You're ready. ${readyCount} of ${memberCount} ready to spin`;
@@ -919,6 +973,10 @@ function everyoneReady(ready = spinReady()) {
 
 function isSpinActive() {
   const spin = familyData?.spinState;
+  return remoteSpinIsActive(spin);
+}
+
+function remoteSpinIsActive(spin) {
   if (!spin?.id) return false;
   const startedAt = Number(spin.startedAt) || Date.now();
   const duration = Number(spin.duration) || SPIN_DURATION_MS;
