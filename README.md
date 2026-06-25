@@ -37,6 +37,5 @@ Open `index.html` in a browser, or run a simple local web server from this folde
 2. Later, sign in with email, account password, and the family password.
 3. Use Home to go to the current wheel or the Movie List.
 4. If the wheel is empty, use Add movies to build the next wheel from the Movie List or a custom title.
-5. Every movie added to the wheel must have a rating: PG, PG-13, or R.
-6. Spin the wheel on movie night.
-7. Confirm the picked movie to remove it from the wheel and add it to history.
+5. Spin the wheel on movie night.
+6. Confirm the picked movie to remove it from the wheel and add it to history.

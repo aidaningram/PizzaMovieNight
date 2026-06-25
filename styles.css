@@ -490,10 +490,6 @@ label {
   overflow-wrap: anywhere;
 }
 
-.rating-inline {
-  grid-template-columns: 1fr;
-}
-
 .remove-button {
   width: 42px;
   min-height: 42px;

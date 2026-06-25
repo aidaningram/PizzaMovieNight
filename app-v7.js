@@ -256,9 +256,8 @@ function renderAddPage() {
   document.querySelector("#custom-wheel-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const title = document.querySelector("#custom-movie-title").value.trim();
-    const rating = document.querySelector("#custom-movie-rating").value;
-    if (!title || !rating) return;
-    await addToWheel({ title, rating });
+    if (!title) return;
+    await addToWheel({ title });
     navigate("wheel");
   });
 }
@@ -304,25 +303,11 @@ function renderCandidateList() {
         <h3>${escapeHtml(movie.title)}</h3>
         <p>Suggested by ${escapeHtml(movie.suggestedBy || "someone")}</p>
       </div>
-      <label class="rating-inline">
-        <span>Rating</span>
-        <select aria-label="Age rating for ${escapeHtml(movie.title)}">
-          <option value="">Select</option>
-          <option value="PG">PG</option>
-          <option value="PG-13">PG-13</option>
-          <option value="R">R</option>
-        </select>
-      </label>
       <button class="secondary-action compact-action" type="button">Add</button>
     `;
-    const select = item.querySelector("select");
     const button = item.querySelector("button");
     button.addEventListener("click", async () => {
-      if (!select.value) {
-        select.focus();
-        return;
-      }
-      await addToWheel({ title: movie.title, rating: select.value, sourceListId: movie.id });
+      await addToWheel({ title: movie.title, sourceListId: movie.id });
       navigate("wheel");
     });
     return item;
@@ -352,13 +337,12 @@ function renderMovieListItems() {
   }));
 }
 
-async function addToWheel({ title, rating, sourceListId = null }) {
+async function addToWheel({ title, sourceListId = null }) {
   if (!canCurrentUserAddMovie()) return;
 
   const movie = {
     id: crypto.randomUUID(),
     title,
-    rating,
     suggestedBy: displayName(),
     suggestedByUid: currentUser.uid,
     createdAt: Date.now()
@@ -504,7 +488,7 @@ function spinWheel() {
 
 function showWinner(movie) {
   document.querySelector("#winner-title").textContent = movie.title;
-  document.querySelector("#winner-meta").textContent = `${movie.rating || "Unrated"} • Suggested by ${movie.suggestedBy || "someone"}`;
+  document.querySelector("#winner-meta").textContent = `Suggested by ${movie.suggestedBy || "someone"}`;
   document.querySelector("#winner-panel").hidden = false;
 }
 
