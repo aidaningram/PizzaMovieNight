@@ -406,25 +406,27 @@ label {
 .wheel-pointer {
   position: absolute;
   top: 40px;
+  transform: translateY(-28px);
   width: 0;
   height: 0;
-  border-left: 18px solid transparent;
-  border-right: 18px solid transparent;
-  border-top: 38px solid var(--ink);
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-top: 28px solid var(--ink);
+  filter: drop-shadow(0 7px 9px rgba(0, 0, 0, 0.32));
   z-index: 2;
 }
 
 .spin-button {
   position: absolute;
-  top: calc(50% - 39px);
-  left: calc(50% - 57px);
-  width: 114px;
-  height: 114px;
+  top: calc(50% - 28px);
+  left: calc(50% - 46px);
+  width: 92px;
+  height: 92px;
   border-radius: 999px;
   background: #111019;
   color: var(--ink);
   border: 4px solid var(--ink);
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 950;
   box-shadow: 0 16px 30px rgba(0, 0, 0, 0.36);
 }

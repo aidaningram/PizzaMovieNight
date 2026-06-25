@@ -431,24 +431,28 @@ function drawWheel(rotation = 0) {
 
     ctx.save();
     ctx.rotate(index * slice + slice / 2);
-    ctx.textAlign = "right";
+    ctx.translate(radius * 0.63, 0);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillStyle = "#111019";
-    ctx.font = "bold 24px system-ui";
-    wrapCanvasText(ctx, movie.title, radius - 30, 2, Math.min(235, radius - 100), 28);
+    ctx.strokeStyle = "rgba(248, 239, 224, 0.35)";
+    ctx.lineWidth = 5;
+    ctx.font = `900 ${movies.length > 6 ? 27 : 32}px system-ui`;
+    wrapCanvasText(ctx, movie.title, 0, -18, Math.min(270, radius * 0.6), movies.length > 6 ? 30 : 36);
     ctx.restore();
   });
 
   ctx.beginPath();
-  ctx.arc(0, 0, 68, 0, Math.PI * 2);
+  ctx.arc(0, 0, 50, 0, Math.PI * 2);
   ctx.fillStyle = "#111019";
   ctx.fill();
   ctx.strokeStyle = "#f8efe0";
   ctx.lineWidth = 4;
   ctx.stroke();
   ctx.fillStyle = "#f8efe0";
-  ctx.font = "bold 28px system-ui";
+  ctx.font = "bold 22px system-ui";
   ctx.textAlign = "center";
-  ctx.fillText("PM", 0, 10);
+  ctx.fillText("PM", 0, 8);
   ctx.restore();
 }
 
@@ -466,7 +470,10 @@ function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
     }
   });
   lines.push(line);
-  lines.slice(0, 3).forEach((item, index) => ctx.fillText(item, x, y + index * lineHeight));
+  lines.slice(0, 3).forEach((item, index) => {
+    ctx.strokeText(item, x, y + index * lineHeight);
+    ctx.fillText(item, x, y + index * lineHeight);
+  });
 }
 
 function spinWheel() {
