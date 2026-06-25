@@ -9,10 +9,12 @@ const templates = {
   home: document.querySelector("#home-template"),
   wheel: document.querySelector("#wheel-template"),
   add: document.querySelector("#add-template"),
-  movieList: document.querySelector("#movie-list-template")
+  movieList: document.querySelector("#movie-list-template"),
+  rankings: document.querySelector("#rankings-template")
 };
 const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
 const sessionKey = "pizzaMovieSession";
+const dismissedRankingsKey = "pizzaMovieDismissedRankings";
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
@@ -215,7 +217,9 @@ function renderRoute() {
   if (route === "wheel") renderWheelPage();
   else if (route === "add") renderAddPage();
   else if (route === "movie-list") renderMovieListPage();
+  else if (route === "rankings") renderRankingsPage();
   else renderHomePage();
+  window.setTimeout(showPendingRankingPrompt, 0);
 }
 
 function renderHomePage() {
@@ -225,6 +229,7 @@ function renderHomePage() {
   document.querySelector("#welcome-title").textContent = `Welcome ${name} to the home of pizza movie night`;
   document.querySelector("#go-wheel-button").addEventListener("click", () => navigate("wheel"));
   document.querySelector("#go-list-button").addEventListener("click", () => navigate("movie-list"));
+  document.querySelector("#go-rankings-button").addEventListener("click", () => navigate("rankings"));
 }
 
 function renderWheelPage() {
@@ -344,6 +349,52 @@ function renderMovieListItems() {
   }));
 }
 
+function renderRankingsPage() {
+  appRoot.replaceChildren(templates.rankings.content.cloneNode(true));
+  renderAppMenu();
+  renderRankingsList();
+}
+
+function renderRankingsList() {
+  const container = document.querySelector("#rankings-list");
+  const movies = historyMovies();
+  if (!movies.length) {
+    container.innerHTML = `<div class="empty-state">Past movie rankings will show up here after a movie is removed from the wheel.</div>`;
+    return;
+  }
+
+  container.replaceChildren(...movies.map((movie) => {
+    const ratings = Object.values(movieRankings(movie));
+    const average = averageRating(movie);
+    const userRanking = currentUserRanking(movie);
+    const details = document.createElement("details");
+    details.className = "ranking-card";
+    details.innerHTML = `
+      <summary>
+        <span>
+          <strong>${escapeHtml(movie.title)}</strong>
+          <small>${ratings.length ? `${ratings.length} ranking${ratings.length === 1 ? "" : "s"}` : "No rankings yet"}</small>
+        </span>
+        <span class="average-score">${average ? `${average.toFixed(1)} ${starText(Math.round(average))}` : "Not ranked"}</span>
+      </summary>
+      <div class="ranking-details">
+        ${userRanking ? "" : `<button class="secondary-action compact-action rank-movie-action" type="button">Rank this movie</button>`}
+        ${ratings.length ? ratings.map((rating) => `
+          <article class="ranking-entry">
+            <div>
+              <strong>${escapeHtml(rating.name || "Someone")}</strong>
+              <span>${starText(rating.score)}</span>
+            </div>
+            ${rating.note ? `<p>${escapeHtml(rating.note)}</p>` : ""}
+          </article>
+        `).join("") : `<p class="helper-text">No one has ranked this movie yet.</p>`}
+      </div>
+    `;
+    details.querySelector(".rank-movie-action")?.addEventListener("click", () => showRankingModal(movie));
+    return details;
+  }));
+}
+
 async function addToWheel({ title, sourceListId = null }) {
   if (!canCurrentUserAddMovie()) return;
 
@@ -367,6 +418,26 @@ async function addToWheel({ title, sourceListId = null }) {
     patch.movieList = movieList().filter((item) => item.id !== sourceListId);
   }
   await saveFamily(patch);
+}
+
+async function saveRanking(movieId, score, note = "") {
+  const history = historyMovies().map((movie) => {
+    if (movie.id !== movieId) return movie;
+    return {
+      ...movie,
+      rankings: {
+        ...movieRankings(movie),
+        [currentUser.uid]: {
+          score,
+          note: note.trim(),
+          name: displayName(),
+          uid: currentUser.uid,
+          createdAt: Date.now()
+        }
+      }
+    };
+  });
+  await saveFamily({ history });
 }
 
 async function removeFromMovieList(movieId) {
@@ -594,7 +665,7 @@ function showWinner(movie) {
 
 async function confirmPicked() {
   if (!pendingWinner) return;
-  const picked = { ...pendingWinner, pickedAt: Date.now(), round: familyData.round || 1 };
+  const picked = { ...pendingWinner, pickedAt: Date.now(), round: familyData.round || 1, rankings: {} };
   const movies = activeMovies().filter((movie) => movie.id !== pendingWinner.id);
   const history = [...(familyData.history || []), picked];
   const patch = { movies, history, spinReady: {}, spinState: null };
@@ -672,6 +743,102 @@ function activeMovies() {
   return familyData?.movies || [];
 }
 
+function historyMovies() {
+  return familyData?.history || [];
+}
+
+function movieRankings(movie) {
+  return movie?.rankings || {};
+}
+
+function currentUserRanking(movie) {
+  if (!currentUser?.uid) return null;
+  return movieRankings(movie)[currentUser.uid] || null;
+}
+
+function averageRating(movie) {
+  const scores = Object.values(movieRankings(movie))
+    .map((rating) => Number(rating.score))
+    .filter((score) => Number.isFinite(score) && score > 0);
+  if (!scores.length) return 0;
+  return scores.reduce((total, score) => total + score, 0) / scores.length;
+}
+
+function starText(score) {
+  const rounded = Math.max(0, Math.min(5, Number(score) || 0));
+  return `${"★".repeat(rounded)}${"☆".repeat(5 - rounded)}`;
+}
+
+function pendingRankingMovie() {
+  const dismissed = readDismissedRankings();
+  return historyMovies().find((movie) => !currentUserRanking(movie) && !dismissed.includes(movie.id));
+}
+
+function showPendingRankingPrompt() {
+  if (!currentUser?.uid || !familyData || document.querySelector(".ranking-modal")) return;
+  const movie = pendingRankingMovie();
+  if (!movie) return;
+  showRankingModal(movie);
+}
+
+function showRankingModal(movie) {
+  if (document.querySelector(".ranking-modal")) return;
+  const overlay = document.createElement("section");
+  overlay.className = "ranking-modal";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "ranking-modal-title");
+  overlay.innerHTML = `
+    <form class="ranking-modal-card">
+      <p class="eyebrow">Quick ranking</p>
+      <h2 id="ranking-modal-title">How was ${escapeHtml(movie.title)}?</h2>
+      <fieldset class="star-picker">
+        <legend>Rating out of five stars</legend>
+        ${[5, 4, 3, 2, 1].map((score) => `
+          <input id="rank-${movie.id}-${score}" name="score" type="radio" value="${score}" required />
+          <label for="rank-${movie.id}-${score}" aria-label="${score} stars">★</label>
+        `).join("")}
+      </fieldset>
+      <label>
+        Note optional
+        <textarea id="ranking-note" maxlength="220" placeholder="What made it work, or not?"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="secondary-action" type="button" data-rank-later>Later</button>
+        <button class="primary-action" type="submit">Save ranking</button>
+      </div>
+    </form>
+  `;
+
+  overlay.querySelector("[data-rank-later]").addEventListener("click", () => {
+    dismissRanking(movie.id);
+    overlay.remove();
+  });
+  overlay.querySelector("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const score = Number(new FormData(event.currentTarget).get("score"));
+    const note = overlay.querySelector("#ranking-note").value;
+    if (!score) return;
+    await saveRanking(movie.id, score, note);
+    overlay.remove();
+  });
+  document.body.append(overlay);
+}
+
+function readDismissedRankings() {
+  try {
+    return JSON.parse(sessionStorage.getItem(dismissedRankingsKey) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function dismissRanking(movieId) {
+  const dismissed = new Set(readDismissedRankings());
+  dismissed.add(movieId);
+  sessionStorage.setItem(dismissedRankingsKey, JSON.stringify([...dismissed]));
+}
+
 function roundPicks() {
   return familyData?.roundPicks || {};
 }
@@ -746,6 +913,7 @@ function renderAppMenu() {
         <button type="button" data-menu-route="wheel">Wheel</button>
         <button type="button" data-menu-route="add" ${addIsAvailable ? "" : "disabled"}>Add Movies</button>
         <button type="button" data-menu-route="movie-list">Movie List</button>
+        <button type="button" data-menu-route="rankings">Rankings</button>
         <button type="button" data-menu-action="logout">Log out</button>
         ${addIsAvailable ? "" : `<p>You can add one movie per wheel. Add Movies opens again after this wheel is cleared.</p>`}
       </nav>

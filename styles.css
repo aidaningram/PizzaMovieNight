@@ -46,7 +46,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -61,14 +62,25 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
-  min-height: 50px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 0 14px;
   background: #15131f;
   color: var(--ink);
+}
+
+input,
+select {
+  min-height: 50px;
+  padding: 0 14px;
+}
+
+textarea {
+  min-height: 96px;
+  padding: 13px 14px;
+  resize: vertical;
 }
 
 select {
@@ -80,7 +92,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: 3px solid rgba(232, 93, 117, 0.28);
   border-color: var(--accent);
 }
@@ -499,6 +512,11 @@ label {
   gap: 11px;
 }
 
+.rankings-list {
+  display: grid;
+  gap: 12px;
+}
+
 .movie-item {
   display: grid;
   gap: 12px;
@@ -525,6 +543,137 @@ label {
   font-size: 1.35rem;
 }
 
+.ranking-card {
+  background: rgba(33, 30, 45, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.ranking-card summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ranking-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.ranking-card summary span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.ranking-card small {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.average-score {
+  color: var(--accent-2);
+  font-weight: 950;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ranking-details {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.ranking-entry {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(21, 19, 31, 0.72);
+}
+
+.ranking-entry div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--accent-2);
+  font-weight: 950;
+}
+
+.ranking-entry p {
+  color: var(--muted);
+}
+
+.ranking-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  background: rgba(13, 12, 19, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.ranking-modal-card {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 430px);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.star-picker {
+  display: flex;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.star-picker legend {
+  width: 100%;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.star-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.star-picker label {
+  display: block;
+  color: rgba(184, 173, 202, 0.45);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.star-picker input:checked ~ label,
+.star-picker label:hover,
+.star-picker label:hover ~ label {
+  color: var(--accent-2);
+}
+
+.modal-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 @media (min-width: 620px) {
   .login-screen {
     grid-template-columns: 1fr minmax(320px, 420px);
@@ -534,7 +683,7 @@ label {
   }
 
   .home-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .candidate-item {
