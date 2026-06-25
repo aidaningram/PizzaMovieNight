@@ -10,7 +10,8 @@ const templates = {
   wheel: document.querySelector("#wheel-template"),
   add: document.querySelector("#add-template"),
   movieList: document.querySelector("#movie-list-template"),
-  rankings: document.querySelector("#rankings-template")
+  rankings: document.querySelector("#rankings-template"),
+  members: document.querySelector("#members-template")
 };
 const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
 const sessionKey = "pizzaMovieSession";
@@ -218,6 +219,7 @@ function renderRoute() {
   else if (route === "add") renderAddPage();
   else if (route === "movie-list") renderMovieListPage();
   else if (route === "rankings") renderRankingsPage();
+  else if (route === "members") renderMembersPage();
   else renderHomePage();
   window.setTimeout(showPendingRankingPrompt, 0);
 }
@@ -397,6 +399,36 @@ function renderRankingsList() {
   }));
 }
 
+function renderMembersPage() {
+  appRoot.replaceChildren(templates.members.content.cloneNode(true));
+  renderAppMenu();
+  renderMembersList();
+}
+
+function renderMembersList() {
+  const container = document.querySelector("#members-list");
+  const members = Object.entries(familyData?.members || {});
+  if (!members.length) {
+    container.innerHTML = `<div class="empty-state">No members are saved yet.</div>`;
+    return;
+  }
+
+  container.replaceChildren(...members.map(([uid, member]) => {
+    const isCurrentUser = uid === currentUser?.uid;
+    const item = document.createElement("article");
+    item.className = "movie-list-card";
+    item.innerHTML = `
+      <div>
+        <h3>${escapeHtml(member.name || member.email || "Family member")}</h3>
+        <p>${isCurrentUser ? "This is you" : escapeHtml(member.email || "Saved family member")}</p>
+      </div>
+      <button class="remove-button" type="button" aria-label="Remove ${escapeHtml(member.name || "member")}" ${isCurrentUser ? "disabled" : ""}>×</button>
+    `;
+    item.querySelector("button").addEventListener("click", () => removeFamilyMember(uid));
+    return item;
+  }));
+}
+
 async function addToWheel({ title, sourceListId = null }) {
   if (!canCurrentUserAddMovie()) return;
 
@@ -445,6 +477,18 @@ async function saveRanking(movieId, score, note = "") {
 async function removeRankingMovie(movieId) {
   if (!window.confirm("Are you sure you want to remove this?")) return;
   await saveFamily({ history: historyMovies().filter((movie) => movie.id !== movieId) });
+}
+
+async function removeFamilyMember(uid) {
+  if (uid === currentUser?.uid) return;
+  if (!window.confirm("Are you sure you want to remove this member?")) return;
+  const members = { ...(familyData.members || {}) };
+  const ready = { ...spinReady() };
+  const picks = { ...roundPicks() };
+  delete members[uid];
+  delete ready[uid];
+  delete picks[uid];
+  await saveFamily({ members, spinReady: ready, roundPicks: picks });
 }
 
 async function removeFromMovieList(movieId) {
@@ -859,10 +903,8 @@ function familyMemberIds() {
 }
 
 function spinParticipantIds() {
-  const ids = activeMovies()
-    .map((movie) => movie.suggestedByUid)
-    .filter(Boolean);
-  return [...new Set(ids.length ? ids : currentUser?.uid ? [currentUser.uid] : familyMemberIds())];
+  const members = familyMemberIds();
+  return members.length ? members : currentUser?.uid ? [currentUser.uid] : [];
 }
 
 function readyMemberCount(ready = spinReady()) {
@@ -928,6 +970,7 @@ function renderAppMenu() {
         <button type="button" data-menu-route="add" ${addIsAvailable ? "" : "disabled"}>Add Movies</button>
         <button type="button" data-menu-route="movie-list">Movie List</button>
         <button type="button" data-menu-route="rankings">Rankings</button>
+        <button type="button" data-menu-route="members">Members</button>
         <button type="button" data-menu-action="logout">Log out</button>
         ${addIsAvailable ? "" : `<p>You can add one movie per wheel. Add Movies opens again after this wheel is cleared.</p>`}
       </nav>
