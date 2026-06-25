@@ -67,6 +67,7 @@
           <div class="home-actions">
             <button id="go-wheel-button" class="primary-action" type="button">Go to wheel</button>
             <button id="go-list-button" class="secondary-action" type="button">Movie List</button>
+            <button id="go-search-button" class="secondary-action" type="button">Find Movies</button>
             <button id="go-rankings-button" class="secondary-action" type="button">Rankings</button>
           </div>
         </section>
@@ -157,6 +158,59 @@
       </main>
     </template>
 
+    <template id="search-template">
+      <main class="page">
+        <header class="page-header">
+          <div class="family-title">The Ingram Family</div>
+          <div class="menu-slot"></div>
+        </header>
+
+        <section class="panel form-stack">
+          <p class="eyebrow">OMDb lookup</p>
+          <h1 class="page-title">Find Movies</h1>
+          <p class="helper-text">Search for movies and add them to the list or wheel.</p>
+        </section>
+
+        <form id="movie-search-form" class="panel form-stack">
+          <label>
+            Movie search
+            <input id="movie-search-input" required maxlength="80" placeholder="Search by title" />
+          </label>
+          <div class="filter-grid">
+            <label>
+              Rating
+              <select id="movie-rating-filter">
+                <option value="">Any rating</option>
+                <option>G</option>
+                <option>PG</option>
+                <option>PG-13</option>
+                <option>R</option>
+              </select>
+            </label>
+            <label>
+              Genre
+              <select id="movie-genre-filter">
+                <option value="">Any genre</option>
+                <option>Action</option>
+                <option>Adventure</option>
+                <option>Animation</option>
+                <option>Comedy</option>
+                <option>Drama</option>
+                <option>Family</option>
+                <option>Fantasy</option>
+                <option>Mystery</option>
+                <option>Sci-Fi</option>
+              </select>
+            </label>
+          </div>
+          <button class="primary-action" type="submit">Search</button>
+          <p id="movie-search-note" class="helper-text" aria-live="polite"></p>
+        </form>
+
+        <section id="movie-search-results" class="search-results"></section>
+      </main>
+    </template>
+
     <template id="rankings-template">
       <main class="page">
         <header class="page-header">
@@ -192,6 +246,6 @@
     </template>
 
     <script type="module" src="firebase-config.js"></script>
-    <script type="module" src="app-v13.js"></script>
+    <script type="module" src="app-v14.js"></script>
   </body>
 </html>

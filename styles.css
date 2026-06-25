@@ -523,6 +523,12 @@ label {
   gap: 12px;
 }
 
+.filter-grid,
+.search-results {
+  display: grid;
+  gap: 12px;
+}
+
 .movie-item {
   display: grid;
   gap: 12px;
@@ -547,6 +553,53 @@ label {
   color: var(--danger);
   border: 1px solid rgba(255, 122, 122, 0.35);
   font-size: 1.35rem;
+}
+
+.search-card {
+  display: grid;
+  grid-template-columns: 86px 1fr;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.search-card img,
+.poster-placeholder {
+  width: 86px;
+  aspect-ratio: 2 / 3;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #15131f;
+  border: 1px solid var(--line);
+}
+
+.poster-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--accent-2);
+  font-weight: 950;
+}
+
+.search-card-body {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.search-card h3 {
+  overflow-wrap: anywhere;
+}
+
+.search-card p {
+  color: var(--muted);
+}
+
+.search-actions {
+  display: grid;
+  gap: 8px;
 }
 
 .ranking-card {
@@ -698,7 +751,21 @@ label {
   }
 
   .home-actions {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .filter-grid,
+  .search-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .search-card {
+    grid-template-columns: 105px 1fr;
+  }
+
+  .search-card img,
+  .poster-placeholder {
+    width: 105px;
   }
 
   .candidate-item {

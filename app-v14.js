@@ -1,4 +1,5 @@
 import { firebaseConfig } from "./firebase-config.js";
+import { omdbApiKey } from "./omdb-config.js";
 
 const FAMILY_PASSWORD = "dogcatpig3";
 const FAMILY_ID = "pizza-movie-night";
@@ -10,12 +11,14 @@ const templates = {
   wheel: document.querySelector("#wheel-template"),
   add: document.querySelector("#add-template"),
   movieList: document.querySelector("#movie-list-template"),
+  search: document.querySelector("#search-template"),
   rankings: document.querySelector("#rankings-template"),
   members: document.querySelector("#members-template")
 };
 const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
 const sessionKey = "pizzaMovieSession";
 const dismissedRankingsKey = "pizzaMovieDismissedRankings";
+const OMDB_READY = Boolean(omdbApiKey && !omdbApiKey.startsWith("PASTE_"));
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
@@ -218,6 +221,7 @@ function renderRoute() {
   if (route === "wheel") renderWheelPage();
   else if (route === "add") renderAddPage();
   else if (route === "movie-list") renderMovieListPage();
+  else if (route === "search") renderSearchPage();
   else if (route === "rankings") renderRankingsPage();
   else if (route === "members") renderMembersPage();
   else renderHomePage();
@@ -231,6 +235,7 @@ function renderHomePage() {
   document.querySelector("#welcome-title").textContent = `Welcome ${name} to the home of pizza movie night`;
   document.querySelector("#go-wheel-button").addEventListener("click", () => navigate("wheel"));
   document.querySelector("#go-list-button").addEventListener("click", () => navigate("movie-list"));
+  document.querySelector("#go-search-button").addEventListener("click", () => navigate("search"));
   document.querySelector("#go-rankings-button").addEventListener("click", () => navigate("rankings"));
 }
 
@@ -315,7 +320,7 @@ function renderCandidateList() {
     item.innerHTML = `
       <div>
         <h3>${escapeHtml(movie.title)}</h3>
-        <p>Suggested by ${escapeHtml(movie.suggestedBy || "someone")}</p>
+        <p>${movieMetaText(movie)}Suggested by ${escapeHtml(movie.suggestedBy || "someone")}</p>
       </div>
       <button class="secondary-action compact-action" type="button">Add</button>
     `;
@@ -342,13 +347,149 @@ function renderMovieListItems() {
     item.innerHTML = `
       <div>
         <h3>${escapeHtml(movie.title)}</h3>
-        <p>Suggested by ${escapeHtml(movie.suggestedBy || "someone")}</p>
+        <p>${movieMetaText(movie)}Suggested by ${escapeHtml(movie.suggestedBy || "someone")}</p>
       </div>
       <button class="remove-button" type="button" aria-label="Remove ${escapeHtml(movie.title)}">×</button>
     `;
     item.querySelector("button").addEventListener("click", () => removeFromMovieList(movie.id));
     return item;
   }));
+}
+
+function renderSearchPage() {
+  appRoot.replaceChildren(templates.search.content.cloneNode(true));
+  renderAppMenu();
+
+  const form = document.querySelector("#movie-search-form");
+  const note = document.querySelector("#movie-search-note");
+  const results = document.querySelector("#movie-search-results");
+
+  if (!OMDB_READY) {
+    note.textContent = "Add your OMDb API key in omdb-config.js to turn on search.";
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const query = document.querySelector("#movie-search-input").value.trim();
+    if (!query) return;
+    if (!OMDB_READY) {
+      note.textContent = "Add your OMDb API key in omdb-config.js to turn on search.";
+      return;
+    }
+
+    note.textContent = "Searching...";
+    results.innerHTML = "";
+    try {
+      const movies = await searchOmdb(query);
+      const filtered = filterOmdbResults(movies);
+      renderSearchResults(filtered);
+      note.textContent = filtered.length ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}` : "No movies matched those filters.";
+    } catch (error) {
+      note.textContent = error.message || "Movie search failed.";
+    }
+  });
+}
+
+async function searchOmdb(query) {
+  const searchUrl = new URL("https://www.omdbapi.com/");
+  searchUrl.searchParams.set("apikey", omdbApiKey);
+  searchUrl.searchParams.set("s", query);
+  searchUrl.searchParams.set("type", "movie");
+
+  const response = await fetch(searchUrl);
+  const data = await response.json();
+  if (data.Response === "False") return [];
+
+  const results = (data.Search || []).slice(0, 10);
+  return Promise.all(results.map((movie) => fetchOmdbDetails(movie.imdbID)));
+}
+
+async function fetchOmdbDetails(imdbID) {
+  const detailUrl = new URL("https://www.omdbapi.com/");
+  detailUrl.searchParams.set("apikey", omdbApiKey);
+  detailUrl.searchParams.set("i", imdbID);
+  detailUrl.searchParams.set("plot", "short");
+
+  const response = await fetch(detailUrl);
+  const data = await response.json();
+  if (data.Response === "False") throw new Error(data.Error || "Movie details failed.");
+  return data;
+}
+
+function filterOmdbResults(movies) {
+  const rating = document.querySelector("#movie-rating-filter").value;
+  const genre = document.querySelector("#movie-genre-filter").value;
+  return movies.filter((movie) => {
+    const ratingMatches = !rating || movie.Rated === rating;
+    const genreMatches = !genre || (movie.Genre || "").split(", ").includes(genre);
+    return ratingMatches && genreMatches;
+  });
+}
+
+function renderSearchResults(movies) {
+  const results = document.querySelector("#movie-search-results");
+  if (!movies.length) {
+    results.innerHTML = `<div class="empty-state">No movies to show.</div>`;
+    return;
+  }
+
+  results.replaceChildren(...movies.map((movie) => {
+    const item = document.createElement("article");
+    item.className = "search-card";
+    const poster = movie.Poster && movie.Poster !== "N/A" ? movie.Poster : "";
+    item.innerHTML = `
+      ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder">PM</div>`}
+      <div class="search-card-body">
+        <div>
+          <h3>${escapeHtml(movie.Title)}</h3>
+          <p>${escapeHtml([movie.Year, movie.Rated, movie.Runtime].filter((value) => value && value !== "N/A").join(" • "))}</p>
+          <p>${escapeHtml(movie.Genre && movie.Genre !== "N/A" ? movie.Genre : "")}</p>
+        </div>
+        <p>${escapeHtml(movie.Plot && movie.Plot !== "N/A" ? movie.Plot : "")}</p>
+        <div class="search-actions">
+          <button class="secondary-action compact-action" type="button" data-add-list>Add to Movie List</button>
+          <button class="primary-action compact-action" type="button" data-add-wheel ${canCurrentUserAddMovie() ? "" : "disabled"}>Add to wheel</button>
+        </div>
+      </div>
+    `;
+    const movieData = omdbMovieData(movie);
+    item.querySelector("[data-add-list]").addEventListener("click", () => addSearchMovieToList(movieData));
+    item.querySelector("[data-add-wheel]").addEventListener("click", async () => {
+      await addToWheel(movieData);
+      navigate("wheel");
+    });
+    return item;
+  }));
+}
+
+function omdbMovieData(movie) {
+  return {
+    title: movie.Title,
+    imdbID: movie.imdbID,
+    year: movie.Year,
+    rated: movie.Rated,
+    genre: movie.Genre,
+    runtime: movie.Runtime,
+    poster: movie.Poster,
+    plot: movie.Plot,
+    source: "omdb"
+  };
+}
+
+async function addSearchMovieToList(movie) {
+  await saveFamily({
+    movieList: [
+      ...movieList(),
+      {
+        ...movie,
+        id: crypto.randomUUID(),
+        suggestedBy: displayName(),
+        suggestedByUid: currentUser.uid,
+        createdAt: Date.now()
+      }
+    ]
+  });
+  document.querySelector("#movie-search-note").textContent = `${movie.title} added to Movie List.`;
 }
 
 function renderRankingsPage() {
@@ -429,10 +570,11 @@ function renderMembersList() {
   }));
 }
 
-async function addToWheel({ title, sourceListId = null }) {
+async function addToWheel({ title, sourceListId = null, ...details }) {
   if (!canCurrentUserAddMovie()) return;
 
   const movie = {
+    ...details,
     id: crypto.randomUUID(),
     title,
     suggestedBy: displayName(),
@@ -997,6 +1139,12 @@ function movieList() {
   return familyData?.movieList || [];
 }
 
+function movieMetaText(movie) {
+  const parts = [movie.year, movie.rated, movie.genre]
+    .filter((value) => value && value !== "N/A");
+  return parts.length ? `${escapeHtml(parts.join(" • "))}<br />` : "";
+}
+
 function displayName() {
   return currentUser?.displayName || readSession()?.name || currentUser?.email?.split("@")[0] || "Someone";
 }
@@ -1027,6 +1175,7 @@ function renderAppMenu() {
         <button type="button" data-menu-route="wheel">Wheel</button>
         <button type="button" data-menu-route="add" ${addIsAvailable ? "" : "disabled"}>Add Movies</button>
         <button type="button" data-menu-route="movie-list">Movie List</button>
+        <button type="button" data-menu-route="search">Find Movies</button>
         <button type="button" data-menu-route="rankings">Rankings</button>
         <button type="button" data-menu-route="members">Members</button>
         <button type="button" data-menu-action="logout">Log out</button>
