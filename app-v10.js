@@ -379,6 +379,7 @@ function renderRankingsList() {
       </summary>
       <div class="ranking-details">
         ${userRanking ? "" : `<button class="secondary-action compact-action rank-movie-action" type="button">Rank this movie</button>`}
+        <button class="remove-ranking-action" type="button">Remove from rankings</button>
         ${ratings.length ? ratings.map((rating) => `
           <article class="ranking-entry">
             <div>
@@ -391,6 +392,7 @@ function renderRankingsList() {
       </div>
     `;
     details.querySelector(".rank-movie-action")?.addEventListener("click", () => showRankingModal(movie));
+    details.querySelector(".remove-ranking-action").addEventListener("click", () => removeRankingMovie(movie.id));
     return details;
   }));
 }
@@ -438,6 +440,11 @@ async function saveRanking(movieId, score, note = "") {
     };
   });
   await saveFamily({ history });
+}
+
+async function removeRankingMovie(movieId) {
+  if (!window.confirm("Are you sure you want to remove this?")) return;
+  await saveFamily({ history: historyMovies().filter((movie) => movie.id !== movieId) });
 }
 
 async function removeFromMovieList(movieId) {

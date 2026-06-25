@@ -588,6 +588,15 @@ label {
   padding: 0 16px 16px;
 }
 
+.remove-ranking-action {
+  min-height: 42px;
+  border-radius: 8px;
+  background: rgba(255, 122, 122, 0.16);
+  color: var(--danger);
+  border: 1px solid rgba(255, 122, 122, 0.35);
+  font-weight: 950;
+}
+
 .ranking-entry {
   display: grid;
   gap: 6px;
