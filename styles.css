@@ -23,7 +23,11 @@ html {
   width: 100%;
   min-height: 100%;
   overflow-x: hidden;
-  background: #111019;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(232, 93, 117, 0.22), transparent 28%),
+    radial-gradient(circle at 86% 16%, rgba(42, 157, 143, 0.18), transparent 30%),
+    linear-gradient(180deg, #111019 0%, #171421 54%, #0d0c13 100%);
+  background-attachment: fixed;
 }
 
 body {
@@ -32,20 +36,12 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
-  background: #111019;
-  color: var(--ink);
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
   background:
     radial-gradient(circle at 18% 8%, rgba(232, 93, 117, 0.22), transparent 28%),
     radial-gradient(circle at 86% 16%, rgba(42, 157, 143, 0.18), transparent 30%),
     linear-gradient(180deg, #111019 0%, #171421 54%, #0d0c13 100%);
-  pointer-events: none;
+  background-attachment: fixed;
+  color: var(--ink);
 }
 
 button,
