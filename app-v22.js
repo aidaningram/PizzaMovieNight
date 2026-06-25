@@ -785,7 +785,7 @@ async function saveRanking(movieId, score, note = "") {
 }
 
 async function removeRankingMovie(movieId) {
-  if (!window.confirm("Are you sure you want to remove this?")) return;
+  if (!window.confirm("Are you sure you want to remove this from Rankings? It will no longer affect recommendations.")) return;
   await saveFamily({ history: historyMovies().filter((movie) => movie.id !== movieId) });
 }
 
