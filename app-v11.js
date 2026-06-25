@@ -587,7 +587,7 @@ function updateSpinUi() {
   if (!button || !status) return;
 
   const movies = activeMovies();
-  const memberCount = familyMemberIds().length;
+  const memberCount = spinParticipantIds().length;
   const readyCount = readyMemberCount();
   const spinActive = isSpinActive();
   const userReady = Boolean(spinReady()[currentUser?.uid]);
@@ -858,13 +858,20 @@ function familyMemberIds() {
   return Object.keys(familyData?.members || {});
 }
 
+function spinParticipantIds() {
+  const ids = activeMovies()
+    .map((movie) => movie.suggestedByUid)
+    .filter(Boolean);
+  return [...new Set(ids.length ? ids : currentUser?.uid ? [currentUser.uid] : familyMemberIds())];
+}
+
 function readyMemberCount(ready = spinReady()) {
-  const members = familyMemberIds();
+  const members = spinParticipantIds();
   return members.filter((uid) => ready[uid]).length;
 }
 
 function everyoneReady(ready = spinReady()) {
-  const members = familyMemberIds();
+  const members = spinParticipantIds();
   return members.length > 0 && members.every((uid) => ready[uid]);
 }
 
