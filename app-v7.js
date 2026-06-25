@@ -226,7 +226,6 @@ function renderHomePage() {
 function renderWheelPage() {
   appRoot.replaceChildren(templates.wheel.content.cloneNode(true));
   renderAppMenu();
-  document.querySelector("#round-label").textContent = `Round ${familyData.round || 1}`;
   document.querySelector("#spin-button").addEventListener("click", spinWheel);
   document.querySelector("#confirm-picked").addEventListener("click", confirmPicked);
   document.querySelector("#go-add-button").addEventListener("click", () => navigate("add"));
