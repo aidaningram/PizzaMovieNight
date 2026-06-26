@@ -9,7 +9,7 @@ const PIZZA_LIFE_MS = 1300;
 const RESPAWN_MS = 2600;
 const TOMATO_SIZE = 26;
 const TOMATO_SPEED = 95;
-const HEARTBEAT_MS = 120;
+const HEARTBEAT_MS = 220;
 const STALE_PLAYER_MS = 6000;
 const MAZE_WALLS = [
   { x: 0, y: 0, w: 960, h: 24 },
@@ -58,6 +58,7 @@ let lastFrame = performance.now();
 let lastHeartbeat = 0;
 let lastShotAt = 0;
 let demoMode = false;
+let remoteProjectiles = {};
 
 start();
 
@@ -129,8 +130,19 @@ async function joinGame() {
   localPlayer = player;
   unsubscribe?.();
   unsubscribe = dbFns.onSnapshot(familyRef, (nextSnap) => {
-    game = normalizeGame(nextSnap.data()?.gameArena);
-    localPlayer = game.players[user.uid] || localPlayer;
+    const remoteGame = normalizeGame(nextSnap.data()?.gameArena);
+    const ownPlayer = localPlayer || remoteGame.players[user.uid];
+    const players = {
+      ...remoteGame.players,
+      ...(ownPlayer ? { [user.uid]: ownPlayer } : {})
+    };
+    remoteProjectiles = remoteGame.projectiles;
+    game = {
+      ...remoteGame,
+      players,
+      projectiles: mergeProjectiles(remoteGame.projectiles, game.projectiles)
+    };
+    localPlayer = ownPlayer;
     setStatus("Online", true);
   });
   requestAnimationFrame(tick);
@@ -206,7 +218,7 @@ function updateLocal(dt, now) {
   }
 
   player.lastSeen = now;
-  const projectiles = pruneProjectiles(moveProjectiles(game.projectiles, dt), now);
+  const projectiles = pruneProjectiles(moveProjectiles(game.projectiles, dt, now), now);
   const tomatoes = moveTomatoes(game.tomatoes, dt);
   const players = { ...game.players, [user.uid]: player };
   resolveHits(players, projectiles, tomatoes, now);
@@ -227,7 +239,7 @@ function updateLocal(dt, now) {
 
 async function syncLocalPlayer(now) {
   const nextGame = normalizeGame(game);
-  const projectiles = pruneProjectiles(nextGame.projectiles, now);
+  const projectiles = pruneProjectiles(mergeProjectiles(remoteProjectiles, nextGame.projectiles), now);
   const tomatoes = nextGame.tomatoes;
   const players = prunePlayers({ ...nextGame.players, [user.uid]: localPlayer });
 
@@ -312,15 +324,27 @@ function pruneProjectiles(projectiles, now) {
   return next;
 }
 
-function moveProjectiles(projectiles, dt) {
+function moveProjectiles(projectiles, dt, now = Date.now()) {
   return Object.fromEntries(Object.values(projectiles).map((shot) => [
     shot.id,
     {
       ...shot,
       x: shot.x + shot.vx * dt,
-      y: shot.y + shot.vy * dt
+      y: shot.y + shot.vy * dt,
+      updatedAt: now
     }
   ]));
+}
+
+function mergeProjectiles(remote, local) {
+  const merged = { ...remote };
+  Object.entries(local || {}).forEach(([id, shot]) => {
+    const existing = merged[id];
+    if (!existing || (shot.updatedAt || shot.createdAt || 0) >= (existing.updatedAt || existing.createdAt || 0)) {
+      merged[id] = shot;
+    }
+  });
+  return merged;
 }
 
 function shoot() {
@@ -338,15 +362,18 @@ function shoot() {
     y: localPlayer.y + (aim.y / mag) * 24,
     vx,
     vy,
-    createdAt: now
+    createdAt: now,
+    updatedAt: now
   };
-  if (demoMode) {
-    game.projectiles[shotId] = shot;
-    return;
-  }
-  dbFns.updateDoc(familyRef, {
-    [`gameArena.projectiles.${shotId}`]: shot
-  }).catch(() => {});
+  game.projectiles = {
+    ...game.projectiles,
+    [shotId]: shot
+  };
+  remoteProjectiles = {
+    ...remoteProjectiles,
+    [shotId]: shot
+  };
+  if (!demoMode) syncLocalPlayer(now);
 }
 
 function draw() {
