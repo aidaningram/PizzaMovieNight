@@ -1,8 +1,8 @@
 import { firebaseConfig } from "./firebase-config.js";
 
 const FAMILY_ID = "pizza-movie-night";
-const GAME_VERSION = 3;
-const ARENA = { width: 960, height: 760 };
+const GAME_VERSION = 4;
+const ARENA = { width: 960, height: 1120 };
 const PLAYER_SIZE = 28;
 const PLAYER_SPEED = 235;
 const PIZZA_SPEED = 520;
@@ -16,9 +16,9 @@ const HEARTBEAT_MS = 220;
 const STALE_PLAYER_MS = 6000;
 const MAZE_WALLS = [
   { x: 0, y: 0, w: 960, h: 24 },
-  { x: 0, y: 736, w: 960, h: 24 },
-  { x: 0, y: 0, w: 24, h: 760 },
-  { x: 936, y: 0, w: 24, h: 760 },
+  { x: 0, y: 1096, w: 960, h: 24 },
+  { x: 0, y: 0, w: 24, h: 1120 },
+  { x: 936, y: 0, w: 24, h: 1120 },
   { x: 120, y: 95, w: 260, h: 30 },
   { x: 520, y: 95, w: 270, h: 30 },
   { x: 210, y: 205, w: 30, h: 220 },
@@ -28,7 +28,12 @@ const MAZE_WALLS = [
   { x: 468, y: 390, w: 30, h: 145 },
   { x: 590, y: 500, w: 270, h: 30 },
   { x: 150, y: 642, w: 230, h: 30 },
-  { x: 580, y: 642, w: 230, h: 30 }
+  { x: 580, y: 642, w: 230, h: 30 },
+  { x: 190, y: 795, w: 30, h: 180 },
+  { x: 360, y: 820, w: 250, h: 30 },
+  { x: 740, y: 785, w: 30, h: 205 },
+  { x: 110, y: 1010, w: 280, h: 30 },
+  { x: 565, y: 1010, w: 285, h: 30 }
 ];
 const TOMATO_STARTS = [
   { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
@@ -36,8 +41,8 @@ const TOMATO_STARTS = [
   { id: "tomato-3", x: 120, y: 680, vx: 0.75, vy: -0.8 },
   { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 },
   { id: "tomato-5", x: 470, y: 116, vx: 0.35, vy: 1 },
-  { id: "tomato-6", x: 470, y: 660, vx: -0.45, vy: -1 },
-  { id: "tomato-7", x: 850, y: 360, vx: -1, vy: 0.2 }
+  { id: "tomato-6", x: 470, y: 920, vx: -0.45, vy: -1 },
+  { id: "tomato-7", x: 850, y: 900, vx: -1, vy: 0.2 }
 ];
 
 const canvas = document.querySelector("#game-canvas");
