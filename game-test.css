@@ -124,8 +124,8 @@ h1 {
 .arena-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 960 / 620;
-  max-height: min(62dvh, 620px);
+  aspect-ratio: 960 / 760;
+  max-height: min(68dvh, 760px);
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -375,7 +375,7 @@ h1 {
 
   .arena-wrap {
     grid-row: 2 / 4;
-    width: min(100%, calc((100dvh - 86px) * 960 / 620));
+    width: min(100%, calc((100dvh - 86px) * 960 / 760));
     margin-left: 8px;
     max-height: calc(100dvh - 86px);
     border: 1px solid var(--line);

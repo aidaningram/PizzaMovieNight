@@ -1,8 +1,9 @@
 import { firebaseConfig } from "./firebase-config.js";
 
 const FAMILY_ID = "pizza-movie-night";
-const ARENA = { width: 960, height: 620 };
-const PLAYER_SIZE = 22;
+const GAME_VERSION = 2;
+const ARENA = { width: 960, height: 760 };
+const PLAYER_SIZE = 28;
 const PLAYER_SPEED = 235;
 const PIZZA_SPEED = 520;
 const PIZZA_LIFE_MS = 1300;
@@ -13,9 +14,9 @@ const HEARTBEAT_MS = 220;
 const STALE_PLAYER_MS = 6000;
 const MAZE_WALLS = [
   { x: 0, y: 0, w: 960, h: 24 },
-  { x: 0, y: 596, w: 960, h: 24 },
-  { x: 0, y: 0, w: 24, h: 620 },
-  { x: 936, y: 0, w: 24, h: 620 },
+  { x: 0, y: 736, w: 960, h: 24 },
+  { x: 0, y: 0, w: 24, h: 760 },
+  { x: 936, y: 0, w: 24, h: 760 },
   { x: 120, y: 95, w: 260, h: 30 },
   { x: 520, y: 95, w: 270, h: 30 },
   { x: 210, y: 205, w: 30, h: 220 },
@@ -23,13 +24,15 @@ const MAZE_WALLS = [
   { x: 720, y: 205, w: 30, h: 225 },
   { x: 96, y: 500, w: 260, h: 30 },
   { x: 468, y: 390, w: 30, h: 145 },
-  { x: 590, y: 500, w: 270, h: 30 }
+  { x: 590, y: 500, w: 270, h: 30 },
+  { x: 150, y: 642, w: 230, h: 30 },
+  { x: 580, y: 642, w: 230, h: 30 }
 ];
 const TOMATO_STARTS = [
   { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
   { id: "tomato-2", x: 855, y: 122, vx: -0.85, vy: 0.55 },
-  { id: "tomato-3", x: 120, y: 540, vx: 0.75, vy: -0.8 },
-  { id: "tomato-4", x: 840, y: 515, vx: -0.7, vy: -0.65 }
+  { id: "tomato-3", x: 120, y: 680, vx: 0.75, vy: -0.8 },
+  { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 }
 ];
 
 const canvas = document.querySelector("#game-canvas");
@@ -156,6 +159,7 @@ async function joinGame() {
 
 function defaultGameState() {
   return {
+    version: GAME_VERSION,
     players: {},
     projectiles: {},
     walls: MAZE_WALLS,
@@ -168,13 +172,15 @@ function defaultGameState() {
 
 function normalizeGame(value) {
   const fallback = defaultGameState();
+  const useCurrentMap = value?.version === GAME_VERSION;
   return {
     ...fallback,
     ...(value || {}),
+    version: GAME_VERSION,
     players: value?.players || {},
     projectiles: value?.projectiles || {},
     walls: MAZE_WALLS,
-    tomatoes: value?.tomatoes || fallback.tomatoes,
+    tomatoes: useCurrentMap && value?.tomatoes ? value.tomatoes : fallback.tomatoes,
     leaderboard: value?.leaderboard || {},
     killLog: value?.killLog || []
   };
@@ -242,6 +248,7 @@ function updateLocal(dt, now) {
     leaderboard,
     killLog: nextKillLog.slice(-20),
     walls: MAZE_WALLS,
+    version: GAME_VERSION,
     updatedAt: now
   };
   localPlayer = game.players[user.uid];
@@ -260,6 +267,7 @@ async function syncLocalPlayer(now) {
 
   const patch = {
     "gameArena.players": players,
+    "gameArena.version": GAME_VERSION,
     "gameArena.projectiles": projectiles,
     "gameArena.walls": MAZE_WALLS,
     "gameArena.tomatoes": tomatoes,
