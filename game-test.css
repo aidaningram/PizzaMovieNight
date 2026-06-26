@@ -168,6 +168,7 @@ h1 {
 }
 
 .shoot-button,
+.leaderboard-button,
 .fire-button {
   min-height: 46px;
   border-radius: 8px;
@@ -178,6 +179,67 @@ h1 {
 
 .shoot-button:disabled {
   opacity: 0.45;
+}
+
+.leaderboard-button {
+  background: rgba(255, 244, 223, 0.12);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.leaderboard-panel {
+  position: fixed;
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 20;
+  max-width: 560px;
+  margin: 0 auto;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(31, 28, 43, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.leaderboard-panel[hidden] {
+  display: none;
+}
+
+.leaderboard-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.leaderboard-header button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: rgba(255, 244, 223, 0.12);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-weight: 900;
+}
+
+.leaderboard-list,
+.kill-log {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+}
+
+.leaderboard-list li,
+.kill-log li {
+  color: var(--muted);
+}
+
+.leaderboard-list strong {
+  color: var(--ink);
 }
 
 .mobile-controls {
@@ -254,6 +316,10 @@ h1 {
   .game-hud {
     grid-template-columns: 1fr 1fr;
     padding: 10px;
+  }
+
+  .leaderboard-button {
+    grid-column: 1 / -1;
   }
 
   .shoot-button {

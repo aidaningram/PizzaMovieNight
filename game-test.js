@@ -40,6 +40,11 @@ const playerCount = document.querySelector("#player-count");
 const playerStatus = document.querySelector("#player-status");
 const shootButton = document.querySelector("#shoot-button");
 const mobileShootButton = document.querySelector("#mobile-shoot-button");
+const leaderboardButton = document.querySelector("#leaderboard-button");
+const leaderboardPanel = document.querySelector("#leaderboard-panel");
+const closeLeaderboardButton = document.querySelector("#close-leaderboard");
+const leaderboardList = document.querySelector("#leaderboard-list");
+const killLog = document.querySelector("#kill-log");
 const joystick = document.querySelector("#joystick");
 const joystickThumb = document.querySelector("#joystick-thumb");
 
@@ -117,6 +122,7 @@ async function joinGame() {
   const existing = snap.exists() ? snap.data().gameArena : null;
   const next = normalizeGame(existing);
   const player = createPlayer();
+  const leaderboard = ensureLeaderboardEntry(next.leaderboard, player);
   await dbFns.updateDoc(familyRef, {
     gameArena: {
       ...next,
@@ -124,6 +130,7 @@ async function joinGame() {
         ...next.players,
         [user.uid]: player
       },
+      leaderboard,
       updatedAt: Date.now()
     }
   });
@@ -154,6 +161,8 @@ function defaultGameState() {
     projectiles: {},
     walls: MAZE_WALLS,
     tomatoes: TOMATO_STARTS.map((tomato) => ({ ...tomato })),
+    leaderboard: {},
+    killLog: [],
     updatedAt: Date.now()
   };
 }
@@ -166,7 +175,9 @@ function normalizeGame(value) {
     players: value?.players || {},
     projectiles: value?.projectiles || {},
     walls: MAZE_WALLS,
-    tomatoes: value?.tomatoes || fallback.tomatoes
+    tomatoes: value?.tomatoes || fallback.tomatoes,
+    leaderboard: value?.leaderboard || {},
+    killLog: value?.killLog || []
   };
 }
 
@@ -221,12 +232,16 @@ function updateLocal(dt, now) {
   const projectiles = pruneProjectiles(moveProjectiles(game.projectiles, dt, now), now);
   const tomatoes = moveTomatoes(game.tomatoes, dt);
   const players = { ...game.players, [user.uid]: player };
-  resolveHits(players, projectiles, tomatoes, now);
+  const leaderboard = ensureLeaderboardEntry(game.leaderboard, player);
+  const nextKillLog = [...(game.killLog || [])];
+  resolveHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now);
   game = {
     ...game,
     players,
     projectiles,
     tomatoes,
+    leaderboard,
+    killLog: nextKillLog.slice(-20),
     walls: MAZE_WALLS,
     updatedAt: now
   };
@@ -242,12 +257,15 @@ async function syncLocalPlayer(now) {
   const projectiles = pruneProjectiles(mergeProjectiles(remoteProjectiles, nextGame.projectiles), now);
   const tomatoes = nextGame.tomatoes;
   const players = prunePlayers({ ...nextGame.players, [user.uid]: localPlayer });
+  const leaderboard = ensureLeaderboardEntry(nextGame.leaderboard, localPlayer);
 
   const patch = {
     "gameArena.players": players,
     "gameArena.projectiles": projectiles,
     "gameArena.walls": MAZE_WALLS,
     "gameArena.tomatoes": tomatoes,
+    "gameArena.leaderboard": leaderboard,
+    "gameArena.killLog": (nextGame.killLog || []).slice(-20),
     "gameArena.updatedAt": Date.now()
   };
   if (demoMode) {
@@ -257,6 +275,8 @@ async function syncLocalPlayer(now) {
       projectiles,
       walls: MAZE_WALLS,
       tomatoes,
+      leaderboard,
+      killLog: (nextGame.killLog || []).slice(-20),
       updatedAt: Date.now()
     };
     localPlayer = game.players[user.uid];
@@ -265,24 +285,61 @@ async function syncLocalPlayer(now) {
   await dbFns.updateDoc(familyRef, patch).catch(() => {});
 }
 
-function resolveHits(players, projectiles, tomatoes, now) {
+function resolveHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now) {
   Object.values(projectiles).forEach((shot) => {
+    if (shot.ownerUid !== user.uid) return;
     Object.values(players).forEach((player) => {
       if (!player.alive || player.uid === shot.ownerUid) return;
       if (distance(player.x, player.y, shot.x, shot.y) < PLAYER_SIZE) {
         player.alive = false;
         player.deadUntil = now + RESPAWN_MS;
+        recordKill(leaderboard, nextKillLog, shot.ownerUid, player.uid, players);
         delete projectiles[shot.id];
       }
     });
   });
 
   Object.values(players).forEach((player) => {
+    if (player.uid !== user.uid) return;
     if (!player.alive) return;
     if (tomatoes.some((tomato) => distance(player.x, player.y, tomato.x, tomato.y) < (PLAYER_SIZE + TOMATO_SIZE) / 2)) {
       player.alive = false;
       player.deadUntil = now + RESPAWN_MS;
     }
+  });
+}
+
+function ensureLeaderboardEntry(leaderboard = {}, player) {
+  if (!player?.uid) return leaderboard || {};
+  return {
+    ...(leaderboard || {}),
+    [player.uid]: {
+      uid: player.uid,
+      name: player.name || "Player",
+      kills: Number(leaderboard?.[player.uid]?.kills || 0),
+      lastKillAt: leaderboard?.[player.uid]?.lastKillAt || 0
+    }
+  };
+}
+
+function recordKill(leaderboard, nextKillLog, killerUid, victimUid, players) {
+  if (!killerUid || killerUid === victimUid) return;
+  const killer = players[killerUid] || { uid: killerUid, name: "Player" };
+  const victim = players[victimUid] || { uid: victimUid, name: "Player" };
+  const current = leaderboard[killerUid] || { uid: killerUid, name: killer.name || "Player", kills: 0 };
+  leaderboard[killerUid] = {
+    ...current,
+    name: killer.name || current.name || "Player",
+    kills: Number(current.kills || 0) + 1,
+    lastKillAt: Date.now()
+  };
+  nextKillLog.push({
+    id: `${killerUid}-${victimUid}-${Date.now()}`,
+    killerUid,
+    killerName: killer.name || "Player",
+    victimUid,
+    victimName: victim.name || "Player",
+    createdAt: Date.now()
   });
 }
 
@@ -393,6 +450,28 @@ function draw() {
   const living = Object.values(game.players).filter((player) => player.alive).length;
   playerCount.textContent = `${Object.keys(game.players).length} online`;
   playerStatus.textContent = localPlayer?.alive ? `${living} still standing` : "Respawning...";
+  renderLeaderboard();
+}
+
+function renderLeaderboard() {
+  const rows = Object.values(game.leaderboard || {})
+    .sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0) || (a.name || "").localeCompare(b.name || ""));
+  const leaderboardRows = rows.length ? rows : [{ name: "No kills yet", kills: 0 }];
+  leaderboardList.replaceChildren(...leaderboardRows.map((row) => {
+    const item = document.createElement("li");
+    item.innerHTML = `<strong>${escapeHtml(row.name || "Player")}</strong> - ${Number(row.kills || 0)} kill${Number(row.kills || 0) === 1 ? "" : "s"}`;
+    return item;
+  }));
+
+  const logs = [...(game.killLog || [])].reverse().slice(0, 8);
+  const killRows = logs.length ? logs : [{ killerName: "No kills logged yet", victimName: "" }];
+  killLog.replaceChildren(...killRows.map((entry) => {
+    const item = document.createElement("li");
+    item.textContent = entry.victimName
+      ? `${entry.killerName || "Player"} hit ${entry.victimName || "Player"}`
+      : entry.killerName;
+    return item;
+  }));
 }
 
 function drawGrid() {
@@ -560,6 +639,15 @@ function distance(ax, ay, bx, by) {
   return Math.hypot(ax - bx, ay - by);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") keyboardInput.up = true;
   if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") keyboardInput.down = true;
@@ -580,6 +668,13 @@ window.addEventListener("keyup", (event) => {
 
 shootButton.addEventListener("pointerdown", shootFromButton);
 mobileShootButton.addEventListener("pointerdown", shootFromButton);
+leaderboardButton.addEventListener("click", () => {
+  leaderboardPanel.hidden = false;
+  renderLeaderboard();
+});
+closeLeaderboardButton.addEventListener("click", () => {
+  leaderboardPanel.hidden = true;
+});
 
 function shootFromButton(event) {
   event.preventDefault();
