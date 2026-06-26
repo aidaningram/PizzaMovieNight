@@ -66,8 +66,14 @@ let lastHeartbeat = 0;
 let lastShotAt = 0;
 let demoMode = false;
 let remoteProjectiles = {};
+let startupResolved = false;
 
 start();
+window.setTimeout(() => {
+  if (!startupResolved && statusPill.textContent === "Loading") {
+    handleGameError(null, "The test game is still waiting for Firebase. Refresh once, and if this keeps happening, sign into the main Pizza app again before opening the game.");
+  }
+}, 8000);
 
 async function start() {
   try {
@@ -81,6 +87,7 @@ async function start() {
     familyRef = firestore.doc(db, "families", FAMILY_ID);
 
     firebaseAuth.onAuthStateChanged(auth, async (nextUser) => {
+      startupResolved = true;
       user = nextUser;
       if (!user) {
         if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
@@ -92,19 +99,35 @@ async function start() {
         shootButton.disabled = true;
         return;
       }
-      await joinGame();
+      try {
+        await joinGame();
+      } catch (error) {
+        handleGameError(error, "The test game could not join the shared arena.");
+      }
     });
   } catch (error) {
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
       startDemoMode();
       return;
     }
-    overlay.hidden = false;
-    overlay.querySelector("p").textContent = error.message || "The test game could not load.";
+    handleGameError(error, "The test game could not load.");
   }
 }
 
+function handleGameError(error, fallbackMessage) {
+  console.error(error);
+  setStatus("Error", false);
+  overlay.hidden = false;
+  shootButton.disabled = true;
+  mobileShootButton.disabled = true;
+  const message = error?.code === "permission-denied"
+    ? "Firebase blocked the test game. Make sure the published Firestore rules allow signed-in users to update the pizza-movie-night family document."
+    : error?.message || fallbackMessage;
+  overlay.querySelector("p").textContent = message;
+}
+
 function startDemoMode() {
+  startupResolved = true;
   demoMode = true;
   user = { uid: "local-demo-player", displayName: "Demo" };
   game = defaultGameState();
@@ -112,6 +135,7 @@ function startDemoMode() {
   game.players[user.uid] = localPlayer;
   overlay.hidden = true;
   shootButton.disabled = false;
+  mobileShootButton.disabled = false;
   setStatus("Demo", true);
   requestAnimationFrame(tick);
 }
@@ -120,6 +144,7 @@ async function joinGame() {
   setStatus("Joining", false);
   overlay.hidden = true;
   shootButton.disabled = false;
+  mobileShootButton.disabled = false;
   const snap = await dbFns.getDoc(familyRef);
   const existing = snap.exists() ? snap.data().gameArena : null;
   const next = normalizeGame(existing);
