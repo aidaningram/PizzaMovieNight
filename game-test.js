@@ -332,9 +332,9 @@ function shoot() {
 }
 
 function draw() {
-  resizeCanvasToDisplay();
-  const scale = Math.min(canvas.clientWidth / ARENA.width, canvas.clientHeight / ARENA.height) || 1;
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  if (canvas.width !== ARENA.width) canvas.width = ARENA.width;
+  if (canvas.height !== ARENA.height) canvas.height = ARENA.height;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, ARENA.width, ARENA.height);
 
   ctx.fillStyle = "#15131f";
@@ -348,15 +348,6 @@ function draw() {
   const living = Object.values(game.players).filter((player) => player.alive).length;
   playerCount.textContent = `${Object.keys(game.players).length} online`;
   playerStatus.textContent = localPlayer?.alive ? `${living} still standing` : "Respawning...";
-}
-
-function resizeCanvasToDisplay() {
-  const ratio = window.devicePixelRatio || 1;
-  const width = Math.max(1, Math.floor(canvas.clientWidth * ratio));
-  const height = Math.max(1, Math.floor(canvas.clientHeight * ratio));
-  if (canvas.width === width && canvas.height === height) return;
-  canvas.width = width;
-  canvas.height = height;
 }
 
 function drawGrid() {

@@ -48,7 +48,7 @@ button {
   margin: 0 auto;
   padding: max(16px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto;
   gap: 12px;
 }
 
@@ -123,8 +123,9 @@ h1 {
 
 .arena-wrap {
   position: relative;
-  min-height: 320px;
-  height: min(62dvh, 620px);
+  width: 100%;
+  aspect-ratio: 960 / 620;
+  max-height: min(62dvh, 620px);
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
@@ -222,7 +223,7 @@ h1 {
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .game-shell {
     min-height: 100dvh;
-    grid-template-rows: auto minmax(260px, 46dvh) auto auto;
+    grid-template-rows: auto auto auto auto;
     gap: 8px;
     padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
   }
@@ -245,8 +246,7 @@ h1 {
   }
 
   .arena-wrap {
-    min-height: 260px;
-    height: auto;
+    max-height: none;
   }
 
   .game-hud {
