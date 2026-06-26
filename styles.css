@@ -902,6 +902,274 @@ label {
   gap: 10px;
 }
 
+.game-page {
+  width: min(100%, 980px);
+  gap: 10px;
+}
+
+.pizza-game-shell {
+  min-height: calc(100dvh - 92px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 8px;
+}
+
+.pizza-game-topbar,
+.pizza-game-hud,
+.mobile-controls {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.88);
+  box-shadow: var(--shadow);
+}
+
+.pizza-game-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+}
+
+.pizza-game-topbar .page-title {
+  font-size: clamp(1.65rem, 8vw, 3rem);
+}
+
+.game-status-pill {
+  min-width: 78px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(248, 239, 224, 0.1);
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.game-status-pill.online {
+  background: rgba(42, 157, 143, 0.2);
+  color: #a9ffd7;
+}
+
+.pizza-arena-wrap {
+  position: relative;
+  width: min(100%, calc(76dvh * 960 / 1120));
+  margin: 0 auto;
+  aspect-ratio: 960 / 1120;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #15131f;
+  box-shadow: var(--shadow);
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.arena-status {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  z-index: 10;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(17, 16, 25, 0.82);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+
+.game-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: rgba(17, 16, 25, 0.82);
+}
+
+.game-overlay p {
+  max-width: 420px;
+  color: var(--muted);
+}
+
+.pizza-game-hud {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.shoot-button,
+.leaderboard-button,
+.fire-button {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-weight: 950;
+}
+
+.shoot-button,
+.fire-button {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #111019;
+}
+
+.leaderboard-button {
+  background: rgba(248, 239, 224, 0.12);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.leaderboard-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 20;
+  width: min(52%, 500px);
+  max-height: 58%;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.leaderboard-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.leaderboard-header button {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: rgba(248, 239, 224, 0.12);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  font-weight: 900;
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 22px;
+  overflow: auto;
+}
+
+.leaderboard-list li {
+  color: var(--muted);
+}
+
+.leaderboard-list strong {
+  color: var(--ink);
+}
+
+.mobile-controls {
+  display: none;
+  gap: 8px;
+  grid-template-columns: 118px 1fr;
+  align-items: center;
+  padding: 8px;
+}
+
+.joystick {
+  position: relative;
+  width: 118px;
+  height: 118px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: radial-gradient(circle, rgba(248, 239, 224, 0.16), rgba(248, 239, 224, 0.05));
+  touch-action: none;
+}
+
+.joystick-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.fire-button {
+  min-height: 78px;
+  border-radius: 999px;
+}
+
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  .game-page {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .game-page .page-header,
+  .pizza-game-topbar,
+  .pizza-game-hud,
+  .mobile-controls {
+    margin-right: 8px;
+    margin-left: 8px;
+  }
+
+  .pizza-game-shell {
+    min-height: calc(100dvh - 74px);
+    grid-template-rows: auto auto auto auto;
+    gap: 7px;
+  }
+
+  .pizza-arena-wrap {
+    width: 100vw;
+    max-width: none;
+    margin-left: calc(50% - 50vw);
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .pizza-game-hud {
+    justify-content: stretch;
+  }
+
+  .leaderboard-button {
+    width: 100%;
+    min-height: 38px;
+  }
+
+  .shoot-button {
+    display: none;
+  }
+
+  .mobile-controls {
+    display: grid;
+    grid-template-columns: 118px 1fr;
+    gap: 12px;
+  }
+
+  .leaderboard-panel {
+    width: min(82%, 360px);
+    max-height: 72%;
+  }
+}
+
 @media (min-width: 620px) {
   .login-screen {
     grid-template-columns: 1fr minmax(320px, 420px);
@@ -911,7 +1179,7 @@ label {
   }
 
   .home-actions {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
   }
 
   .filter-grid,

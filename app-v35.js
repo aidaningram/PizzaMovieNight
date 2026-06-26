@@ -14,7 +14,8 @@ const templates = {
   search: document.querySelector("#search-template"),
   movieDetail: document.querySelector("#movie-detail-template"),
   rankings: document.querySelector("#rankings-template"),
-  members: document.querySelector("#members-template")
+  members: document.querySelector("#members-template"),
+  game: document.querySelector("#game-template")
 };
 const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
 const sessionKey = "pizzaMovieSession";
@@ -35,6 +36,49 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
+const GAME_VERSION = 4;
+const GAME_ARENA = { width: 960, height: 1120 };
+const GAME_PLAYER_SIZE = 28;
+const GAME_PLAYER_SPEED = 235;
+const GAME_PIZZA_SPEED = 520;
+const GAME_PIZZA_LIFE_MS = 1300;
+const GAME_RESPAWN_MS = 2600;
+const GAME_TOMATO_SIZE = 26;
+const GAME_TOMATO_SPEED = 95;
+const GAME_TOMATO_TURN_MIN_MS = 550;
+const GAME_TOMATO_TURN_MAX_MS = 1700;
+const GAME_HEARTBEAT_MS = 220;
+const GAME_STALE_PLAYER_MS = 6000;
+const GAME_WALLS = [
+  { x: 0, y: 0, w: 960, h: 24 },
+  { x: 0, y: 1096, w: 960, h: 24 },
+  { x: 0, y: 0, w: 24, h: 1120 },
+  { x: 936, y: 0, w: 24, h: 1120 },
+  { x: 120, y: 95, w: 260, h: 30 },
+  { x: 520, y: 95, w: 270, h: 30 },
+  { x: 210, y: 205, w: 30, h: 220 },
+  { x: 360, y: 205, w: 245, h: 30 },
+  { x: 720, y: 205, w: 30, h: 225 },
+  { x: 96, y: 500, w: 260, h: 30 },
+  { x: 468, y: 390, w: 30, h: 145 },
+  { x: 590, y: 500, w: 270, h: 30 },
+  { x: 150, y: 642, w: 230, h: 30 },
+  { x: 580, y: 642, w: 230, h: 30 },
+  { x: 190, y: 795, w: 30, h: 180 },
+  { x: 360, y: 820, w: 250, h: 30 },
+  { x: 740, y: 785, w: 30, h: 205 },
+  { x: 110, y: 1010, w: 280, h: 30 },
+  { x: 565, y: 1010, w: 285, h: 30 }
+];
+const GAME_TOMATO_STARTS = [
+  { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
+  { id: "tomato-2", x: 855, y: 122, vx: -0.85, vy: 0.55 },
+  { id: "tomato-3", x: 120, y: 680, vx: 0.75, vy: -0.8 },
+  { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 },
+  { id: "tomato-5", x: 470, y: 116, vx: 0.35, vy: 1 },
+  { id: "tomato-6", x: 470, y: 920, vx: -0.45, vy: -1 },
+  { id: "tomato-7", x: 850, y: 900, vx: -1, vy: 0.2 }
+];
 
 let services = null;
 let currentUser = null;
@@ -45,6 +89,16 @@ let appStarted = false;
 let authMode = "signin";
 let authReady = false;
 let activeSpinAnimationId = null;
+let gameState = null;
+let gameLocalPlayer = null;
+let gameInput = { x: 0, y: 0 };
+let gameKeyboardInput = { up: false, down: false, left: false, right: false };
+let gameAim = { x: 1, y: 0 };
+let gameLastFrame = performance.now();
+let gameLastHeartbeat = 0;
+let gameLastShotAt = 0;
+let gameAnimationId = null;
+let gameRemoteProjectiles = {};
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -54,6 +108,10 @@ const demoStore = {
   write(nextData) {
     localStorage.setItem(this.key, JSON.stringify(nextData));
     familyData = nextData;
+    if (routeName() === "game" && document.querySelector("#game-canvas")) {
+      receiveGameSnapshot();
+      return;
+    }
     renderRoute();
   }
 };
@@ -132,6 +190,10 @@ async function enterFamilySpace(session) {
 
   unsubscribeFamily = services.dbFns.onSnapshot(familyRef, (nextSnap) => {
     familyData = { ...nextSnap.data(), id: nextSnap.id };
+    if (routeName() === "game" && document.querySelector("#game-canvas")) {
+      receiveGameSnapshot();
+      return;
+    }
     renderRoute();
   }, (error) => {
     renderLogin(error.message || "Firebase could not load the family wheel.");
@@ -139,6 +201,7 @@ async function enterFamilySpace(session) {
 }
 
 function renderLogin(message = "") {
+  cleanupGame();
   cleanupFamilyListener();
   authMode = "signin";
   appRoot.replaceChildren(templates.login.content.cloneNode(true));
@@ -250,6 +313,7 @@ function renderRoute() {
   if (!familyData) return;
 
   const route = routeName();
+  if (route !== "game") cleanupGame();
   if (route === "wheel") renderWheelPage();
   else if (route === "add") renderAddPage();
   else if (route === "movie-list") renderMovieListPage();
@@ -257,8 +321,9 @@ function renderRoute() {
   else if (route === "movie-detail") renderMovieDetailPage();
   else if (route === "rankings") renderRankingsPage();
   else if (route === "members") renderMembersPage();
+  else if (route === "game") renderGamePage();
   else renderHomePage();
-  window.setTimeout(showPendingRankingPrompt, 0);
+  if (route !== "game") window.setTimeout(showPendingRankingPrompt, 0);
 }
 
 function renderHomePage() {
@@ -270,6 +335,7 @@ function renderHomePage() {
   document.querySelector("#go-list-button").addEventListener("click", () => navigate("movie-list"));
   document.querySelector("#go-search-button").addEventListener("click", () => navigate("search"));
   document.querySelector("#go-rankings-button").addEventListener("click", () => navigate("rankings"));
+  document.querySelector("#go-game-button").addEventListener("click", () => navigate("game"));
 }
 
 function renderWheelPage() {
@@ -775,6 +841,678 @@ function renderMembersList() {
   }));
 }
 
+function renderGamePage() {
+  appRoot.replaceChildren(templates.game.content.cloneNode(true));
+  renderAppMenu();
+  gameState = normalizeGame(familyData?.gameArena);
+  gameRemoteProjectiles = gameState.projectiles;
+  joinGameArena();
+  attachGameControls();
+  setGameStatus("Joining", false);
+  if (!gameAnimationId) {
+    gameLastFrame = performance.now();
+    gameAnimationId = requestAnimationFrame(gameTick);
+  }
+}
+
+function joinGameArena() {
+  if (!currentUser?.uid) return;
+  const player = createGamePlayer();
+  const next = normalizeGame(familyData?.gameArena);
+  const leaderboard = ensureGameLeaderboardEntry(next.leaderboard, player);
+  gameLocalPlayer = player;
+  gameState = {
+    ...next,
+    players: {
+      ...next.players,
+      [currentUser.uid]: player
+    },
+    leaderboard,
+    updatedAt: Date.now()
+  };
+  writeGameArena(gameState);
+  setGameStatus("Online", true);
+}
+
+function receiveGameSnapshot() {
+  if (!document.querySelector("#game-canvas")) return;
+  const remoteGame = normalizeGame(familyData?.gameArena);
+  const ownPlayer = gameLocalPlayer || remoteGame.players[currentUser?.uid];
+  const players = {
+    ...remoteGame.players,
+    ...(ownPlayer ? { [currentUser.uid]: ownPlayer } : {})
+  };
+  gameRemoteProjectiles = remoteGame.projectiles;
+  gameState = {
+    ...remoteGame,
+    players,
+    projectiles: mergeGameProjectiles(remoteGame.projectiles, gameState?.projectiles || {})
+  };
+  gameLocalPlayer = ownPlayer;
+}
+
+function defaultGameState() {
+  return {
+    version: GAME_VERSION,
+    players: {},
+    projectiles: {},
+    walls: GAME_WALLS,
+    tomatoes: GAME_TOMATO_STARTS.map((tomato) => ({ ...tomato })),
+    leaderboard: {},
+    killLog: [],
+    updatedAt: Date.now()
+  };
+}
+
+function normalizeGame(value) {
+  const fallback = defaultGameState();
+  const useCurrentMap = value?.version === GAME_VERSION;
+  return {
+    ...fallback,
+    ...(value || {}),
+    version: GAME_VERSION,
+    players: value?.players || {},
+    projectiles: value?.projectiles || {},
+    walls: GAME_WALLS,
+    tomatoes: useCurrentMap && value?.tomatoes ? value.tomatoes : fallback.tomatoes,
+    leaderboard: value?.leaderboard || {},
+    killLog: value?.killLog || []
+  };
+}
+
+function createGamePlayer() {
+  const spawn = randomGameSpawn();
+  return {
+    uid: currentUser.uid,
+    name: displayName(),
+    color: gameColorFromUid(currentUser.uid),
+    x: spawn.x,
+    y: spawn.y,
+    aimX: 1,
+    aimY: 0,
+    alive: true,
+    deadUntil: 0,
+    lastSeen: Date.now()
+  };
+}
+
+function gameTick(now) {
+  const canvas = document.querySelector("#game-canvas");
+  if (!canvas) {
+    cleanupGame();
+    return;
+  }
+  const dt = Math.min(0.04, (now - gameLastFrame) / 1000);
+  gameLastFrame = now;
+  updateLocalGame(dt, Date.now());
+  drawGame();
+  gameAnimationId = requestAnimationFrame(gameTick);
+}
+
+function updateLocalGame(dt, now) {
+  if (!currentUser?.uid || !gameLocalPlayer) return;
+  const player = { ...gameLocalPlayer };
+  if (player.deadUntil && now >= player.deadUntil) {
+    const spawn = randomGameSpawn();
+    player.x = spawn.x;
+    player.y = spawn.y;
+    player.alive = true;
+    player.deadUntil = 0;
+  }
+
+  if (player.alive) {
+    const vector = gameInputVector();
+    if (vector.x || vector.y) {
+      gameAim = vector;
+      player.aimX = vector.x;
+      player.aimY = vector.y;
+      const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * GAME_PLAYER_SPEED * dt, vector.y * GAME_PLAYER_SPEED * dt);
+      player.x = next.x;
+      player.y = next.y;
+    }
+  }
+
+  player.lastSeen = now;
+  const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
+  const tomatoes = moveGameTomatoes(gameState.tomatoes, dt);
+  const players = { ...gameState.players, [currentUser.uid]: player };
+  const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
+  const nextKillLog = [...(gameState.killLog || [])];
+  resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now);
+  gameState = {
+    ...gameState,
+    players,
+    projectiles,
+    tomatoes,
+    leaderboard,
+    killLog: nextKillLog.slice(-20),
+    walls: GAME_WALLS,
+    version: GAME_VERSION,
+    updatedAt: now
+  };
+  gameLocalPlayer = gameState.players[currentUser.uid];
+  if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
+    gameLastHeartbeat = now;
+    syncLocalGame(now);
+  }
+}
+
+async function syncLocalGame(now) {
+  const nextGame = normalizeGame(gameState);
+  const projectiles = pruneGameProjectiles(mergeGameProjectiles(gameRemoteProjectiles, nextGame.projectiles), now);
+  const players = pruneGamePlayers({ ...nextGame.players, [currentUser.uid]: gameLocalPlayer });
+  const leaderboard = ensureGameLeaderboardEntry(nextGame.leaderboard, gameLocalPlayer);
+  const nextArena = {
+    ...nextGame,
+    players,
+    projectiles,
+    walls: GAME_WALLS,
+    tomatoes: nextGame.tomatoes,
+    leaderboard,
+    killLog: (nextGame.killLog || []).slice(-20),
+    version: GAME_VERSION,
+    updatedAt: Date.now()
+  };
+  gameState = nextArena;
+  gameLocalPlayer = gameState.players[currentUser.uid];
+  await writeGameArena(nextArena);
+}
+
+async function writeGameArena(nextArena) {
+  familyData = { ...familyData, gameArena: nextArena };
+  if (!FIREBASE_READY) {
+    localStorage.setItem(demoStore.key, JSON.stringify(familyData));
+    return;
+  }
+  await services.dbFns.updateDoc(services.dbFns.doc(services.db, "families", FAMILY_ID), {
+    gameArena: nextArena,
+    updatedAt: services.dbFns.serverTimestamp()
+  }).catch(() => {});
+}
+
+function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now) {
+  Object.values(projectiles).forEach((shot) => {
+    if (shot.ownerUid !== currentUser.uid) return;
+    Object.values(players).forEach((player) => {
+      if (!player.alive || player.uid === shot.ownerUid) return;
+      if (gameDistance(player.x, player.y, shot.x, shot.y) < GAME_PLAYER_SIZE) {
+        player.alive = false;
+        player.deadUntil = now + GAME_RESPAWN_MS;
+        recordGameKill(leaderboard, nextKillLog, shot.ownerUid, player.uid, players);
+        delete projectiles[shot.id];
+      }
+    });
+  });
+
+  Object.values(players).forEach((player) => {
+    if (player.uid !== currentUser.uid || !player.alive) return;
+    if (tomatoes.some((tomato) => gameDistance(player.x, player.y, tomato.x, tomato.y) < (GAME_PLAYER_SIZE + GAME_TOMATO_SIZE) / 2)) {
+      player.alive = false;
+      player.deadUntil = now + GAME_RESPAWN_MS;
+    }
+  });
+}
+
+function ensureGameLeaderboardEntry(leaderboard = {}, player) {
+  if (!player?.uid) return leaderboard || {};
+  return {
+    ...(leaderboard || {}),
+    [player.uid]: {
+      uid: player.uid,
+      name: player.name || "Player",
+      kills: Number(leaderboard?.[player.uid]?.kills || 0),
+      lastKillAt: leaderboard?.[player.uid]?.lastKillAt || 0
+    }
+  };
+}
+
+function recordGameKill(leaderboard, nextKillLog, killerUid, victimUid, players) {
+  if (!killerUid || killerUid === victimUid) return;
+  const killer = players[killerUid] || { uid: killerUid, name: "Player" };
+  const victim = players[victimUid] || { uid: victimUid, name: "Player" };
+  const current = leaderboard[killerUid] || { uid: killerUid, name: killer.name || "Player", kills: 0 };
+  leaderboard[killerUid] = {
+    ...current,
+    name: killer.name || current.name || "Player",
+    kills: Number(current.kills || 0) + 1,
+    lastKillAt: Date.now()
+  };
+  nextKillLog.push({
+    id: `${killerUid}-${victimUid}-${Date.now()}`,
+    killerUid,
+    killerName: killer.name || "Player",
+    victimUid,
+    victimName: victim.name || "Player",
+    createdAt: Date.now()
+  });
+}
+
+function moveGameTomatoes(tomatoes, dt) {
+  const now = Date.now();
+  return tomatoes.map((tomato) => {
+    let wanderingTomato = normalizeGameTomato(tomato, now);
+    if (now >= wanderingTomato.nextTurnAt) {
+      wanderingTomato = turnGameTomato(wanderingTomato, now);
+    }
+
+    let next = {
+      ...wanderingTomato,
+      x: wanderingTomato.x + wanderingTomato.vx * GAME_TOMATO_SPEED * dt,
+      y: wanderingTomato.y + wanderingTomato.vy * GAME_TOMATO_SPEED * dt
+    };
+    const hitX = next.x < GAME_TOMATO_SIZE || next.x > GAME_ARENA.width - GAME_TOMATO_SIZE
+      || GAME_WALLS.some((wall) => gameCircleRectHit(next.x, wanderingTomato.y, GAME_TOMATO_SIZE / 2, wall));
+    const hitY = next.y < GAME_TOMATO_SIZE || next.y > GAME_ARENA.height - GAME_TOMATO_SIZE
+      || GAME_WALLS.some((wall) => gameCircleRectHit(next.x, next.y, GAME_TOMATO_SIZE / 2, wall));
+    if (hitX) {
+      next.x = wanderingTomato.x;
+      next = turnGameTomato({ ...next, vx: -next.vx }, now);
+    }
+    if (hitY) {
+      next.y = wanderingTomato.y;
+      next = turnGameTomato({ ...next, vy: -next.vy }, now);
+    }
+    return next;
+  });
+}
+
+function normalizeGameTomato(tomato, now) {
+  const magnitude = Math.hypot(tomato.vx, tomato.vy) || 1;
+  return {
+    ...tomato,
+    vx: tomato.vx / magnitude,
+    vy: tomato.vy / magnitude,
+    nextTurnAt: tomato.nextTurnAt || now + randomGameTomatoTurnDelay()
+  };
+}
+
+function turnGameTomato(tomato, now) {
+  const angle = Math.atan2(tomato.vy, tomato.vx) + gameRandomBetween(-1.15, 1.15);
+  return {
+    ...tomato,
+    vx: Math.cos(angle),
+    vy: Math.sin(angle),
+    nextTurnAt: now + randomGameTomatoTurnDelay()
+  };
+}
+
+function randomGameTomatoTurnDelay() {
+  return gameRandomBetween(GAME_TOMATO_TURN_MIN_MS, GAME_TOMATO_TURN_MAX_MS);
+}
+
+function pruneGamePlayers(players) {
+  const now = Date.now();
+  return Object.fromEntries(Object.entries(players).filter(([, player]) => now - (player.lastSeen || 0) < GAME_STALE_PLAYER_MS));
+}
+
+function pruneGameProjectiles(projectiles, now) {
+  const next = {};
+  Object.values(projectiles || {}).forEach((shot) => {
+    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS) return;
+    next[shot.id] = { ...shot };
+  });
+  return next;
+}
+
+function moveGameProjectiles(projectiles, dt, now = Date.now()) {
+  return Object.fromEntries(Object.values(projectiles || {}).map((shot) => [
+    shot.id,
+    {
+      ...shot,
+      x: shot.x + shot.vx * dt,
+      y: shot.y + shot.vy * dt,
+      updatedAt: now
+    }
+  ]));
+}
+
+function mergeGameProjectiles(remote = {}, local = {}) {
+  const merged = { ...remote };
+  Object.entries(local || {}).forEach(([id, shot]) => {
+    const existing = merged[id];
+    if (!existing || (shot.updatedAt || shot.createdAt || 0) >= (existing.updatedAt || existing.createdAt || 0)) {
+      merged[id] = shot;
+    }
+  });
+  return merged;
+}
+
+function shootGamePizza() {
+  const now = Date.now();
+  if (!currentUser?.uid || !gameLocalPlayer?.alive || now - gameLastShotAt < 430) return;
+  gameLastShotAt = now;
+  const shotId = `${currentUser.uid}-${now}`;
+  const mag = Math.hypot(gameAim.x, gameAim.y) || 1;
+  const shot = {
+    id: shotId,
+    ownerUid: currentUser.uid,
+    x: gameLocalPlayer.x + (gameAim.x / mag) * 24,
+    y: gameLocalPlayer.y + (gameAim.y / mag) * 24,
+    vx: (gameAim.x / mag) * GAME_PIZZA_SPEED,
+    vy: (gameAim.y / mag) * GAME_PIZZA_SPEED,
+    createdAt: now,
+    updatedAt: now
+  };
+  gameState.projectiles = {
+    ...gameState.projectiles,
+    [shotId]: shot
+  };
+  gameRemoteProjectiles = {
+    ...gameRemoteProjectiles,
+    [shotId]: shot
+  };
+  syncLocalGame(now);
+}
+
+function drawGame() {
+  const canvas = document.querySelector("#game-canvas");
+  if (!canvas || !gameState) return;
+  if (canvas.width !== GAME_ARENA.width) canvas.width = GAME_ARENA.width;
+  if (canvas.height !== GAME_ARENA.height) canvas.height = GAME_ARENA.height;
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
+  ctx.fillStyle = "#15131f";
+  ctx.fillRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
+  drawGameGrid(ctx);
+  gameState.walls.forEach((wall) => drawGameWall(ctx, wall));
+  gameState.tomatoes.forEach((tomato) => drawGameTomato(ctx, tomato));
+  Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
+  Object.values(gameState.players).forEach((player) => drawGamePlayer(ctx, player));
+
+  if (gameLocalPlayer && !gameLocalPlayer.alive) {
+    showGameArenaStatus("Respawning...");
+  } else if (document.querySelector("#game-connection-status")?.textContent === "Online") {
+    hideGameArenaStatus();
+  }
+  renderGameLeaderboard();
+}
+
+function renderGameLeaderboard() {
+  const leaderboardList = document.querySelector("#leaderboard-list");
+  if (!leaderboardList || !gameState) return;
+  const rows = Object.values(gameState.leaderboard || {})
+    .sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0) || (a.name || "").localeCompare(b.name || ""));
+  const leaderboardRows = rows.length ? rows : [{ name: "No kills yet", kills: 0 }];
+  leaderboardList.replaceChildren(...leaderboardRows.map((row) => {
+    const item = document.createElement("li");
+    item.innerHTML = `<strong>${escapeHtml(row.name || "Player")}</strong> - ${Number(row.kills || 0)} kill${Number(row.kills || 0) === 1 ? "" : "s"}`;
+    return item;
+  }));
+}
+
+function drawGameGrid(ctx) {
+  ctx.strokeStyle = "rgba(255, 244, 223, 0.05)";
+  ctx.lineWidth = 1;
+  for (let x = 0; x <= GAME_ARENA.width; x += 48) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, GAME_ARENA.height);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= GAME_ARENA.height; y += 48) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(GAME_ARENA.width, y);
+    ctx.stroke();
+  }
+}
+
+function drawGameWall(ctx, wall) {
+  ctx.fillStyle = "#4e4762";
+  ctx.strokeStyle = "#9387b4";
+  ctx.lineWidth = 3;
+  gameRoundRect(ctx, wall.x, wall.y, wall.w, wall.h, 8);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawGameTomato(ctx, tomato) {
+  ctx.save();
+  ctx.translate(tomato.x, tomato.y);
+  ctx.fillStyle = "#e63946";
+  ctx.strokeStyle = "#7a1721";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, GAME_TOMATO_SIZE / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#3ddc97";
+  ctx.beginPath();
+  ctx.moveTo(-7, -12);
+  ctx.lineTo(0, -20);
+  ctx.lineTo(7, -12);
+  ctx.lineTo(2, -14);
+  ctx.lineTo(0, -8);
+  ctx.lineTo(-2, -14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 244, 223, 0.8)";
+  ctx.beginPath();
+  ctx.arc(-4, -4, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawGamePlayer(ctx, player) {
+  ctx.save();
+  ctx.globalAlpha = player.alive ? 1 : 0.35;
+  ctx.fillStyle = player.color;
+  ctx.strokeStyle = "#fff4df";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, GAME_PLAYER_SIZE / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#111019";
+  ctx.font = "900 12px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), player.x, player.y + 0.5);
+  ctx.fillStyle = "#fff4df";
+  ctx.font = "800 13px system-ui";
+  ctx.fillText(player.name || "Player", player.x, player.y - 26);
+  ctx.restore();
+}
+
+function drawGamePizzaShot(ctx, shot) {
+  ctx.save();
+  ctx.translate(shot.x, shot.y);
+  ctx.rotate(Math.atan2(shot.vy, shot.vx));
+  ctx.fillStyle = "#ffc83d";
+  ctx.strokeStyle = "#5b2b17";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-10, -8);
+  ctx.lineTo(12, 0);
+  ctx.lineTo(-10, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#d93d3d";
+  ctx.beginPath();
+  ctx.arc(-3, 0, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function randomGameSpawn() {
+  const state = gameState || normalizeGame(familyData?.gameArena);
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const x = 38 + Math.random() * (GAME_ARENA.width - 76);
+    const y = 38 + Math.random() * (GAME_ARENA.height - 76);
+    const blocked = state.walls.some((rect) => gameCircleRectHit(x, y, GAME_PLAYER_SIZE, rect))
+      || state.tomatoes.some((tomato) => gameDistance(x, y, tomato.x, tomato.y) < 90);
+    if (!blocked) return { x, y };
+  }
+  return { x: 60, y: 60 };
+}
+
+function gameInputVector() {
+  const keyX = Number(gameKeyboardInput.right) - Number(gameKeyboardInput.left);
+  const keyY = Number(gameKeyboardInput.down) - Number(gameKeyboardInput.up);
+  const x = gameInput.x || keyX;
+  const y = gameInput.y || keyY;
+  const mag = Math.hypot(x, y) || 1;
+  return { x: x / mag, y: y / mag };
+}
+
+function moveGamePlayerWithWalls(x, y, dx, dy) {
+  let nextX = gameClamp(x + dx, GAME_PLAYER_SIZE, GAME_ARENA.width - GAME_PLAYER_SIZE);
+  let nextY = gameClamp(y + dy, GAME_PLAYER_SIZE, GAME_ARENA.height - GAME_PLAYER_SIZE);
+  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, y, GAME_PLAYER_SIZE / 2, wall))) nextX = x;
+  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, nextY, GAME_PLAYER_SIZE / 2, wall))) nextY = y;
+  return { x: nextX, y: nextY };
+}
+
+function gameCircleRectHit(cx, cy, radius, rect) {
+  const nearestX = gameClamp(cx, rect.x, rect.x + rect.w);
+  const nearestY = gameClamp(cy, rect.y, rect.y + rect.h);
+  return gameDistance(cx, cy, nearestX, nearestY) <= radius;
+}
+
+function gameRoundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function attachGameControls() {
+  const shootButton = document.querySelector("#shoot-button");
+  const mobileShootButton = document.querySelector("#mobile-shoot-button");
+  const leaderboardButton = document.querySelector("#leaderboard-button");
+  const leaderboardPanel = document.querySelector("#leaderboard-panel");
+  const closeLeaderboardButton = document.querySelector("#close-leaderboard");
+  const joystick = document.querySelector("#joystick");
+
+  shootButton?.addEventListener("pointerdown", shootGameFromButton);
+  mobileShootButton?.addEventListener("pointerdown", shootGameFromButton);
+  leaderboardButton?.addEventListener("click", () => {
+    leaderboardPanel.hidden = false;
+    renderGameLeaderboard();
+  });
+  closeLeaderboardButton?.addEventListener("click", () => {
+    leaderboardPanel.hidden = true;
+  });
+  joystick?.addEventListener("pointerdown", handleGameJoystick);
+  joystick?.addEventListener("pointermove", handleGameJoystick);
+  joystick?.addEventListener("pointerup", resetGameJoystick);
+  joystick?.addEventListener("pointercancel", resetGameJoystick);
+  window.addEventListener("keydown", handleGameKeyDown);
+  window.addEventListener("keyup", handleGameKeyUp);
+}
+
+function shootGameFromButton(event) {
+  event.preventDefault();
+  shootGamePizza();
+}
+
+function handleGameJoystick(event) {
+  const joystick = document.querySelector("#joystick");
+  const joystickThumb = document.querySelector("#joystick-thumb");
+  if (!joystick || !joystickThumb) return;
+  joystick.setPointerCapture(event.pointerId);
+  const rect = joystick.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const max = rect.width * 0.34;
+  const dx = event.clientX - centerX;
+  const dy = event.clientY - centerY;
+  const mag = Math.hypot(dx, dy);
+  const clamped = Math.min(max, mag);
+  const nx = mag ? dx / mag : 0;
+  const ny = mag ? dy / mag : 0;
+  gameInput = { x: nx * (clamped / max), y: ny * (clamped / max) };
+  joystickThumb.style.transform = `translate(calc(-50% + ${nx * clamped}px), calc(-50% + ${ny * clamped}px))`;
+}
+
+function resetGameJoystick() {
+  const joystickThumb = document.querySelector("#joystick-thumb");
+  gameInput = { x: 0, y: 0 };
+  if (joystickThumb) joystickThumb.style.transform = "translate(-50%, -50%)";
+}
+
+function handleGameKeyDown(event) {
+  if (routeName() !== "game") return;
+  if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") gameKeyboardInput.up = true;
+  if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") gameKeyboardInput.down = true;
+  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") gameKeyboardInput.left = true;
+  if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") gameKeyboardInput.right = true;
+  if (event.key === " ") {
+    event.preventDefault();
+    shootGamePizza();
+  }
+}
+
+function handleGameKeyUp(event) {
+  if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") gameKeyboardInput.up = false;
+  if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") gameKeyboardInput.down = false;
+  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") gameKeyboardInput.left = false;
+  if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") gameKeyboardInput.right = false;
+}
+
+function setGameStatus(text, online) {
+  const statusPill = document.querySelector("#game-connection-status");
+  if (!statusPill) return;
+  statusPill.textContent = text;
+  statusPill.classList.toggle("online", online);
+  if (online) hideGameArenaStatus();
+  else showGameArenaStatus(text);
+}
+
+function showGameArenaStatus(text) {
+  const arenaStatus = document.querySelector("#arena-status");
+  if (!arenaStatus) return;
+  arenaStatus.textContent = text;
+  arenaStatus.hidden = false;
+}
+
+function hideGameArenaStatus() {
+  const arenaStatus = document.querySelector("#arena-status");
+  if (arenaStatus) arenaStatus.hidden = true;
+}
+
+function cleanupGame() {
+  if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
+  gameAnimationId = null;
+  gameState = null;
+  gameLocalPlayer = null;
+  gameRemoteProjectiles = {};
+  gameInput = { x: 0, y: 0 };
+  gameKeyboardInput = { up: false, down: false, left: false, right: false };
+  window.removeEventListener("keydown", handleGameKeyDown);
+  window.removeEventListener("keyup", handleGameKeyUp);
+}
+
+function gameClamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function gameDistance(ax, ay, bx, by) {
+  return Math.hypot(ax - bx, ay - by);
+}
+
+function gameRandomBetween(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function gameColorFromUid(uid) {
+  const palette = ["#ff7a59", "#f4c95d", "#3ddc97", "#66d9ef", "#c77dff", "#ef476f"];
+  let sum = 0;
+  [...uid].forEach((char) => {
+    sum += char.charCodeAt(0);
+  });
+  return palette[sum % palette.length];
+}
+
 async function addToWheel({ title, sourceListId = null, ...details }) {
   if (!canCurrentUserAddMovie()) return;
 
@@ -1195,6 +1933,7 @@ function defaultFamilyData() {
     roundPicks: {},
     spinReady: {},
     spinState: null,
+    gameArena: defaultGameState(),
     movieList: [
       { id: crypto.randomUUID(), title: "Spider-Man: Into the Spider-Verse", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 5000 },
       { id: crypto.randomUUID(), title: "The Princess Bride", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 4000 },
@@ -1566,6 +2305,7 @@ function renderAppMenu() {
         <button type="button" data-menu-route="movie-list">Movie List</button>
         <button type="button" data-menu-route="search">Find Movies</button>
         <button type="button" data-menu-route="rankings">Rankings</button>
+        <button type="button" data-menu-route="game">Pizza Arena</button>
         <button type="button" data-menu-route="members">Members</button>
         <button type="button" data-menu-action="logout">Log out</button>
       </nav>
@@ -1600,6 +2340,7 @@ function renderAppMenu() {
 
 function logout() {
   if (!window.confirm("Are you sure you want to log out?")) return;
+  cleanupGame();
   cleanupFamilyListener();
   localStorage.removeItem(sessionKey);
   currentUser = null;
