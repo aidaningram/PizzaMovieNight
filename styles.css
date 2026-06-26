@@ -909,7 +909,13 @@ label {
   padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom));
   gap: 10px;
   grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
   overflow: hidden;
+}
+
+.game-page .page-header {
+  position: static;
+  top: auto;
 }
 
 .pizza-game-shell {
