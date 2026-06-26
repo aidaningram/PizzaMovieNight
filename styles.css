@@ -903,12 +903,18 @@ label {
 }
 
 .game-page {
+  height: 100dvh;
+  min-height: 100dvh;
   width: min(100%, 980px);
+  padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom));
   gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .pizza-game-shell {
-  min-height: calc(100dvh - 92px);
+  min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   gap: 8px;
@@ -953,7 +959,11 @@ label {
 
 .pizza-arena-wrap {
   position: relative;
-  width: min(100%, calc(76dvh * 960 / 1120));
+  align-self: stretch;
+  justify-self: center;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
   margin: 0 auto;
   aspect-ratio: 960 / 1120;
   border: 1px solid var(--line);
@@ -1118,8 +1128,7 @@ label {
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .game-page {
-    padding-right: 0;
-    padding-left: 0;
+    padding: max(6px, env(safe-area-inset-top)) 0 max(6px, env(safe-area-inset-bottom));
   }
 
   .game-page .page-header,
@@ -1131,15 +1140,22 @@ label {
   }
 
   .pizza-game-shell {
-    min-height: calc(100dvh - 74px);
-    grid-template-rows: auto auto auto auto;
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto auto;
     gap: 7px;
+  }
+
+  .pizza-game-topbar {
+    display: none;
   }
 
   .pizza-arena-wrap {
     width: 100vw;
-    max-width: none;
-    margin-left: calc(50% - 50vw);
+    height: auto;
+    max-width: 100vw;
+    margin-right: auto;
+    margin-left: auto;
     border-right: 0;
     border-left: 0;
     border-radius: 0;
@@ -1160,8 +1176,22 @@ label {
 
   .mobile-controls {
     display: grid;
-    grid-template-columns: 118px 1fr;
+    grid-template-columns: 104px 1fr;
     gap: 12px;
+  }
+
+  .joystick {
+    width: 104px;
+    height: 104px;
+  }
+
+  .joystick-thumb {
+    width: 46px;
+    height: 46px;
+  }
+
+  .fire-button {
+    min-height: 70px;
   }
 
   .leaderboard-panel {
