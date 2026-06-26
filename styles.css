@@ -177,10 +177,15 @@ h3 {
   display: grid;
   place-items: center;
   border-radius: 16px;
-  background: linear-gradient(145deg, var(--accent), var(--accent-2));
-  color: #111019;
-  font-weight: 950;
+  background: transparent;
   box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.brand-logo {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .family-title {
@@ -596,8 +601,15 @@ label {
 .poster-placeholder {
   display: grid;
   place-items: center;
-  color: var(--accent-2);
-  font-weight: 950;
+  padding: 12px;
+}
+
+.poster-placeholder img {
+  width: 100%;
+  height: auto;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
 }
 
 .search-card-body {
