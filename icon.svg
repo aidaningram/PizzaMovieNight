@@ -36,6 +36,6 @@
     <path d="M354 170 158 366"/>
   </g>
   <circle cx="256" cy="268" r="45" fill="#15131f" stroke="#fff4db" stroke-width="8"/>
-  <path d="M256 88v-40" stroke="#fff4db" stroke-linecap="round" stroke-width="18"/>
-  <path d="M256 34 208 91h96Z" fill="#fff4db"/>
+  <path d="M256 34v42" stroke="#fff4db" stroke-linecap="round" stroke-width="18"/>
+  <path d="M208 66h96l-48 58Z" fill="#fff4db"/>
 </svg>
