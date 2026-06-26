@@ -287,12 +287,13 @@ h1 {
   .game-shell {
     min-height: 100dvh;
     grid-template-rows: auto auto auto auto;
-    gap: 8px;
-    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+    gap: 7px;
+    padding: max(8px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
   }
 
   .game-topbar {
     grid-template-columns: 44px minmax(0, 1fr) auto;
+    margin: 0 8px;
     padding: 8px;
   }
 
@@ -309,12 +310,19 @@ h1 {
   }
 
   .arena-wrap {
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
     max-height: none;
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
   }
 
   .game-hud {
     grid-template-columns: 1fr 1fr;
-    padding: 10px;
+    margin: 0 8px;
+    padding: 8px;
+    gap: 8px;
   }
 
   .leaderboard-button {
@@ -328,8 +336,9 @@ h1 {
   .mobile-controls {
     display: grid;
     grid-template-columns: 118px 1fr;
-    gap: 14px;
-    padding: 10px;
+    gap: 12px;
+    margin: 0 8px;
+    padding: 8px;
   }
 
   .joystick {
@@ -343,11 +352,43 @@ h1 {
   }
 
   .fire-button {
-    min-height: 84px;
+    min-height: 78px;
   }
 
   .leaderboard-panel {
     width: min(82%, 360px);
     max-height: 72%;
+  }
+}
+
+@media (hover: none) and (orientation: landscape) {
+  .game-shell {
+    grid-template-columns: minmax(0, 1fr) 210px;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px;
+  }
+
+  .game-topbar {
+    grid-column: 1 / -1;
+  }
+
+  .arena-wrap {
+    grid-row: 2 / 4;
+    width: min(100%, calc((100dvh - 86px) * 960 / 620));
+    margin-left: 8px;
+    max-height: calc(100dvh - 86px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .game-hud,
+  .mobile-controls {
+    margin-right: 8px;
+    margin-left: 0;
+  }
+
+  .mobile-controls {
+    grid-template-columns: 1fr;
   }
 }
