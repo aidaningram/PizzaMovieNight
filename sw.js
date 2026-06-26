@@ -1,9 +1,9 @@
-const CACHE_NAME = "pizza-movie-night-v37";
+const CACHE_NAME = "pizza-movie-night-v38";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
-  "./app-v29.js",
+  "./app-v30.js",
   "./firebase-config.js",
   "./omdb-config.js",
   "./manifest.webmanifest",
@@ -22,9 +22,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
+        if (!response.ok) return response;
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
