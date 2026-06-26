@@ -218,6 +218,8 @@ h1 {
   color: #111019;
   font-size: 1.2rem;
   font-weight: 950;
+  touch-action: manipulation;
+  user-select: none;
 }
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {

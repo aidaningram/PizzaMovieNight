@@ -177,7 +177,7 @@ function createPlayer() {
 function tick(now) {
   const dt = Math.min(0.04, (now - lastFrame) / 1000);
   lastFrame = now;
-  updateLocal(dt, now);
+  updateLocal(dt, Date.now());
   draw();
   requestAnimationFrame(tick);
 }
@@ -205,8 +205,20 @@ function updateLocal(dt, now) {
     }
   }
 
-  player.lastSeen = Date.now();
-  localPlayer = player;
+  player.lastSeen = now;
+  const projectiles = pruneProjectiles(moveProjectiles(game.projectiles, dt), now);
+  const tomatoes = moveTomatoes(game.tomatoes, dt);
+  const players = { ...game.players, [user.uid]: player };
+  resolveHits(players, projectiles, tomatoes, now);
+  game = {
+    ...game,
+    players,
+    projectiles,
+    tomatoes,
+    walls: MAZE_WALLS,
+    updatedAt: now
+  };
+  localPlayer = game.players[user.uid];
   if (now - lastHeartbeat > HEARTBEAT_MS) {
     lastHeartbeat = now;
     syncLocalPlayer(now);
@@ -216,9 +228,8 @@ function updateLocal(dt, now) {
 async function syncLocalPlayer(now) {
   const nextGame = normalizeGame(game);
   const projectiles = pruneProjectiles(nextGame.projectiles, now);
-  const tomatoes = moveTomatoes(nextGame.tomatoes, HEARTBEAT_MS / 1000);
+  const tomatoes = nextGame.tomatoes;
   const players = prunePlayers({ ...nextGame.players, [user.uid]: localPlayer });
-  resolveHits(players, projectiles, tomatoes, now);
 
   const patch = {
     "gameArena.players": players,
@@ -296,13 +307,20 @@ function pruneProjectiles(projectiles, now) {
   Object.values(projectiles).forEach((shot) => {
     const age = now - shot.createdAt;
     if (age > PIZZA_LIFE_MS) return;
-    next[shot.id] = {
-      ...shot,
-      x: shot.x + shot.vx * (HEARTBEAT_MS / 1000),
-      y: shot.y + shot.vy * (HEARTBEAT_MS / 1000)
-    };
+    next[shot.id] = { ...shot };
   });
   return next;
+}
+
+function moveProjectiles(projectiles, dt) {
+  return Object.fromEntries(Object.values(projectiles).map((shot) => [
+    shot.id,
+    {
+      ...shot,
+      x: shot.x + shot.vx * dt,
+      y: shot.y + shot.vy * dt
+    }
+  ]));
 }
 
 function shoot() {
@@ -533,8 +551,13 @@ window.addEventListener("keyup", (event) => {
   if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") keyboardInput.right = false;
 });
 
-shootButton.addEventListener("click", shoot);
-mobileShootButton.addEventListener("click", shoot);
+shootButton.addEventListener("pointerdown", shootFromButton);
+mobileShootButton.addEventListener("pointerdown", shootFromButton);
+
+function shootFromButton(event) {
+  event.preventDefault();
+  shoot();
+}
 
 joystick.addEventListener("pointerdown", handleJoystick);
 joystick.addEventListener("pointermove", handleJoystick);
