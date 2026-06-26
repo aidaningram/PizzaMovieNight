@@ -22,6 +22,8 @@
 
       <section class="arena-wrap">
         <canvas id="game-canvas" width="960" height="760" aria-label="Pizza Arena game"></canvas>
+        <div id="arena-status" class="arena-status">Loading</div>
+        <button id="leaderboard-button" class="arena-leaderboard-button" type="button">Leaderboard</button>
         <div id="game-overlay" class="game-overlay">
           <h2>Pizza Arena</h2>
           <p>Sign into the main Pizza app first, then open this page to join the test arena.</p>
@@ -39,15 +41,6 @@
       </section>
 
       <section class="game-hud">
-        <div>
-          <p class="hud-label">Players</p>
-          <p id="player-count">0 online</p>
-        </div>
-        <div>
-          <p class="hud-label">Status</p>
-          <p id="player-status">Joining...</p>
-        </div>
-        <button id="leaderboard-button" class="leaderboard-button" type="button">Leaderboard</button>
         <button id="shoot-button" class="shoot-button" type="button">Shoot pizza</button>
       </section>
 

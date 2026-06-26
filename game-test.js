@@ -44,8 +44,7 @@ const canvas = document.querySelector("#game-canvas");
 const ctx = canvas.getContext("2d");
 const overlay = document.querySelector("#game-overlay");
 const statusPill = document.querySelector("#connection-status");
-const playerCount = document.querySelector("#player-count");
-const playerStatus = document.querySelector("#player-status");
+const arenaStatus = document.querySelector("#arena-status");
 const shootButton = document.querySelector("#shoot-button");
 const mobileShootButton = document.querySelector("#mobile-shoot-button");
 const leaderboardButton = document.querySelector("#leaderboard-button");
@@ -514,9 +513,11 @@ function draw() {
   Object.values(game.projectiles).forEach(drawPizzaShot);
   Object.values(game.players).forEach(drawPlayer);
 
-  const living = Object.values(game.players).filter((player) => player.alive).length;
-  playerCount.textContent = `${Object.keys(game.players).length} online`;
-  playerStatus.textContent = localPlayer?.alive ? `${living} still standing` : "Respawning...";
+  if (localPlayer && !localPlayer.alive) {
+    showArenaStatus("Respawning...");
+  } else if (statusPill.textContent === "Online" || statusPill.textContent === "Demo") {
+    hideArenaStatus();
+  }
   renderLeaderboard();
 }
 
@@ -687,6 +688,20 @@ function colorFromUid(uid) {
 function setStatus(text, online) {
   statusPill.textContent = text;
   statusPill.classList.toggle("online", online);
+  if (online) {
+    hideArenaStatus();
+  } else {
+    showArenaStatus(text);
+  }
+}
+
+function showArenaStatus(text) {
+  arenaStatus.textContent = text;
+  arenaStatus.hidden = false;
+}
+
+function hideArenaStatus() {
+  arenaStatus.hidden = true;
 }
 
 function clamp(value, min, max) {
