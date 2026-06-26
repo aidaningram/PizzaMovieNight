@@ -84,6 +84,7 @@ let services = null;
 let currentUser = null;
 let familyData = null;
 let unsubscribeFamily = null;
+let unsubscribeGameArena = null;
 let pendingWinner = null;
 let appStarted = false;
 let authMode = "signin";
@@ -151,12 +152,15 @@ async function initFirebase() {
   const firebaseApp = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
   const firebaseAuth = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js");
   const firestore = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js");
+  const realtimeDatabase = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js");
   const app = firebaseApp.initializeApp(firebaseConfig);
   services = {
     auth: firebaseAuth.getAuth(app),
     db: firestore.getFirestore(app),
+    rtdb: realtimeDatabase.getDatabase(app),
     authFns: firebaseAuth,
-    dbFns: firestore
+    dbFns: firestore,
+    rtdbFns: realtimeDatabase
   };
   authReady = true;
 
@@ -191,10 +195,7 @@ async function enterFamilySpace(session) {
 
   unsubscribeFamily = services.dbFns.onSnapshot(familyRef, (nextSnap) => {
     familyData = { ...nextSnap.data(), id: nextSnap.id };
-    if (routeName() === "game" && document.querySelector("#game-canvas")) {
-      receiveGameSnapshot();
-      return;
-    }
+    if (routeName() === "game" && document.querySelector("#game-canvas")) return;
     renderRoute();
   }, (error) => {
     renderLogin(error.message || "Firebase could not load the family wheel.");
@@ -849,11 +850,27 @@ function renderGamePage() {
   gameRemoteProjectiles = gameState.projectiles;
   attachGameControls();
   setGameStatus("Joining", false);
+  subscribeGameArena();
   joinGameArena();
   if (!gameAnimationId) {
     gameLastFrame = performance.now();
     gameAnimationId = requestAnimationFrame(gameTick);
   }
+}
+
+function subscribeGameArena() {
+  if (!FIREBASE_READY || !services?.rtdb) return;
+  cleanupGameArenaListener();
+  const gameRef = gameArenaRef();
+  unsubscribeGameArena = services.rtdbFns.onValue(gameRef, (snap) => {
+    const nextArena = snap.val();
+    if (!nextArena) return;
+    familyData = { ...familyData, gameArena: nextArena };
+    receiveGameSnapshot();
+  }, () => {
+    setGameStatus("Error", false);
+    showGameArenaStatus("Realtime Database blocked the game. Check Realtime Database rules.");
+  });
 }
 
 function joinGameArena() {
@@ -1035,15 +1052,33 @@ async function syncLocalGame(now) {
 }
 
 async function writeGameArena(nextArena) {
+  const existingPlayers = familyData?.gameArena?.players || {};
+  const existingTomatoes = familyData?.gameArena?.tomatoes;
   familyData = { ...familyData, gameArena: nextArena };
   if (!FIREBASE_READY) {
     localStorage.setItem(demoStore.key, JSON.stringify(familyData));
     return;
   }
-  await services.dbFns.updateDoc(services.dbFns.doc(services.db, "families", FAMILY_ID), {
-    gameArena: nextArena,
-    updatedAt: services.dbFns.serverTimestamp()
-  }).catch(() => {});
+  const patch = {
+    version: GAME_VERSION,
+    walls: GAME_WALLS,
+    projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
+    leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
+    killLog: nextArena.killLog || [],
+    updatedAt: Date.now(),
+    [`players/${currentUser.uid}`]: nextArena.players?.[currentUser.uid] || null
+  };
+  Object.keys(existingPlayers).forEach((uid) => {
+    if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
+  });
+  if (currentUser.uid === gameHostUid(nextArena.players || {}) || !existingTomatoes) {
+    patch.tomatoes = nextArena.tomatoes || GAME_TOMATO_STARTS;
+  }
+
+  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {
+    setGameStatus("Error", false);
+    showGameArenaStatus("Realtime Database could not save the game.");
+  });
 }
 
 function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now) {
@@ -1525,6 +1560,7 @@ function hideGameArenaStatus() {
 
 function cleanupGame() {
   if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
+  cleanupGameArenaListener();
   gameAnimationId = null;
   gameState = null;
   gameLocalPlayer = null;
@@ -1534,6 +1570,15 @@ function cleanupGame() {
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
+}
+
+function cleanupGameArenaListener() {
+  if (unsubscribeGameArena) unsubscribeGameArena();
+  unsubscribeGameArena = null;
+}
+
+function gameArenaRef() {
+  return services.rtdbFns.ref(services.rtdb, `families/${FAMILY_ID}/gameArena`);
 }
 
 function gameClamp(value, min, max) {
