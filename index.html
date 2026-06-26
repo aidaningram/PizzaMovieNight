@@ -44,6 +44,10 @@
             Account password
             <input id="account-password-input" type="password" autocomplete="current-password" required minlength="6" placeholder="At least 6 characters" />
           </label>
+          <label id="confirm-password-field-wrap" hidden>
+            Confirm password
+            <input id="confirm-password-input" type="password" autocomplete="new-password" minlength="6" placeholder="Re-enter password" />
+          </label>
           <label id="family-password-field-wrap" hidden>
             Family password
             <input id="family-password-input" type="password" autocomplete="current-password" required placeholder="Family password" />
@@ -257,6 +261,6 @@
     </template>
 
     <script type="module" src="firebase-config.js"></script>
-    <script type="module" src="app-v22.js"></script>
+    <script type="module" src="app-v23.js"></script>
   </body>
 </html>

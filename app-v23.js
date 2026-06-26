@@ -147,6 +147,8 @@ function renderLogin(message = "") {
   const nameField = document.querySelector("#family-name-input");
   const nameWrap = document.querySelector("#name-field-wrap");
   const passwordField = document.querySelector("#account-password-input");
+  const confirmPasswordField = document.querySelector("#confirm-password-input");
+  const confirmPasswordWrap = document.querySelector("#confirm-password-field-wrap");
   const emailField = document.querySelector("#account-email-input");
   const familyPasswordField = document.querySelector("#family-password-input");
   const familyPasswordWrap = document.querySelector("#family-password-field-wrap");
@@ -156,8 +158,10 @@ function renderLogin(message = "") {
   function syncAuthModeFields() {
     const creating = authMode === "signup";
     nameWrap.hidden = !creating;
+    confirmPasswordWrap.hidden = !creating;
     familyPasswordWrap.hidden = !creating;
     nameField.required = creating;
+    confirmPasswordField.required = creating;
     familyPasswordField.required = creating;
     passwordField.autocomplete = creating ? "new-password" : "current-password";
     resetButton.hidden = creating;
@@ -194,7 +198,12 @@ function renderLogin(message = "") {
     const name = nameField.value.trim();
     const email = emailField.value.trim();
     const accountPassword = passwordField.value;
+    const confirmPassword = confirmPasswordField.value;
     const familyPassword = familyPasswordField.value;
+    if (authMode === "signup" && accountPassword !== confirmPassword) {
+      note.textContent = "The account passwords do not match.";
+      return;
+    }
     if (authMode === "signup" && familyPassword !== FAMILY_PASSWORD) {
       note.textContent = "That is not the family password.";
       return;
