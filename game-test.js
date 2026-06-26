@@ -44,7 +44,6 @@ const leaderboardButton = document.querySelector("#leaderboard-button");
 const leaderboardPanel = document.querySelector("#leaderboard-panel");
 const closeLeaderboardButton = document.querySelector("#close-leaderboard");
 const leaderboardList = document.querySelector("#leaderboard-list");
-const killLog = document.querySelector("#kill-log");
 const joystick = document.querySelector("#joystick");
 const joystickThumb = document.querySelector("#joystick-thumb");
 
@@ -463,15 +462,6 @@ function renderLeaderboard() {
     return item;
   }));
 
-  const logs = [...(game.killLog || [])].reverse().slice(0, 8);
-  const killRows = logs.length ? logs : [{ killerName: "No kills logged yet", victimName: "" }];
-  killLog.replaceChildren(...killRows.map((entry) => {
-    const item = document.createElement("li");
-    item.textContent = entry.victimName
-      ? `${entry.killerName || "Player"} hit ${entry.victimName || "Player"}`
-      : entry.killerName;
-    return item;
-  }));
 }
 
 function drawGrid() {

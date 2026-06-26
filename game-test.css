@@ -188,16 +188,16 @@ h1 {
 }
 
 .leaderboard-panel {
-  position: fixed;
-  left: max(14px, env(safe-area-inset-left));
-  right: max(14px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  position: absolute;
+  left: 50%;
+  top: 50%;
   z-index: 20;
-  max-width: 560px;
-  margin: 0 auto;
+  width: min(52%, 500px);
+  max-height: 58%;
   display: grid;
   gap: 14px;
   padding: 16px;
+  transform: translate(-50%, -50%);
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(31, 28, 43, 0.98);
@@ -225,16 +225,15 @@ h1 {
   font-weight: 900;
 }
 
-.leaderboard-list,
-.kill-log {
+.leaderboard-list {
   display: grid;
   gap: 8px;
   margin: 0;
   padding-left: 22px;
+  overflow: auto;
 }
 
-.leaderboard-list li,
-.kill-log li {
+.leaderboard-list li {
   color: var(--muted);
 }
 
@@ -345,5 +344,10 @@ h1 {
 
   .fire-button {
     min-height: 84px;
+  }
+
+  .leaderboard-panel {
+    width: min(82%, 360px);
+    max-height: 72%;
   }
 }
