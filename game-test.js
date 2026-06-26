@@ -1,7 +1,7 @@
 import { firebaseConfig } from "./firebase-config.js";
 
 const FAMILY_ID = "pizza-movie-night";
-const GAME_VERSION = 2;
+const GAME_VERSION = 3;
 const ARENA = { width: 960, height: 760 };
 const PLAYER_SIZE = 28;
 const PLAYER_SPEED = 235;
@@ -10,6 +10,8 @@ const PIZZA_LIFE_MS = 1300;
 const RESPAWN_MS = 2600;
 const TOMATO_SIZE = 26;
 const TOMATO_SPEED = 95;
+const TOMATO_TURN_MIN_MS = 550;
+const TOMATO_TURN_MAX_MS = 1700;
 const HEARTBEAT_MS = 220;
 const STALE_PLAYER_MS = 6000;
 const MAZE_WALLS = [
@@ -32,7 +34,10 @@ const TOMATO_STARTS = [
   { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
   { id: "tomato-2", x: 855, y: 122, vx: -0.85, vy: 0.55 },
   { id: "tomato-3", x: 120, y: 680, vx: 0.75, vy: -0.8 },
-  { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 }
+  { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 },
+  { id: "tomato-5", x: 470, y: 116, vx: 0.35, vy: 1 },
+  { id: "tomato-6", x: 470, y: 660, vx: -0.45, vy: -1 },
+  { id: "tomato-7", x: 850, y: 360, vx: -1, vy: 0.2 }
 ];
 
 const canvas = document.querySelector("#game-canvas");
@@ -376,26 +381,56 @@ function recordKill(leaderboard, nextKillLog, killerUid, victimUid, players) {
 }
 
 function moveTomatoes(tomatoes, dt) {
+  const now = Date.now();
   return tomatoes.map((tomato) => {
+    let wanderingTomato = normalizeTomato(tomato, now);
+    if (now >= wanderingTomato.nextTurnAt) {
+      wanderingTomato = turnTomato(wanderingTomato, now);
+    }
+
     let next = {
-      ...tomato,
-      x: tomato.x + tomato.vx * TOMATO_SPEED * dt,
-      y: tomato.y + tomato.vy * TOMATO_SPEED * dt
+      ...wanderingTomato,
+      x: wanderingTomato.x + wanderingTomato.vx * TOMATO_SPEED * dt,
+      y: wanderingTomato.y + wanderingTomato.vy * TOMATO_SPEED * dt
     };
     const hitX = next.x < TOMATO_SIZE || next.x > ARENA.width - TOMATO_SIZE
-      || MAZE_WALLS.some((wall) => circleRectHit(next.x, tomato.y, TOMATO_SIZE / 2, wall));
+      || MAZE_WALLS.some((wall) => circleRectHit(next.x, wanderingTomato.y, TOMATO_SIZE / 2, wall));
     const hitY = next.y < TOMATO_SIZE || next.y > ARENA.height - TOMATO_SIZE
       || MAZE_WALLS.some((wall) => circleRectHit(next.x, next.y, TOMATO_SIZE / 2, wall));
     if (hitX) {
-      next.vx *= -1;
-      next.x = tomato.x;
+      next.x = wanderingTomato.x;
+      next = turnTomato({ ...next, vx: -next.vx }, now);
     }
     if (hitY) {
-      next.vy *= -1;
-      next.y = tomato.y;
+      next.y = wanderingTomato.y;
+      next = turnTomato({ ...next, vy: -next.vy }, now);
     }
     return next;
   });
+}
+
+function normalizeTomato(tomato, now) {
+  const magnitude = Math.hypot(tomato.vx, tomato.vy) || 1;
+  return {
+    ...tomato,
+    vx: tomato.vx / magnitude,
+    vy: tomato.vy / magnitude,
+    nextTurnAt: tomato.nextTurnAt || now + randomTomatoTurnDelay()
+  };
+}
+
+function turnTomato(tomato, now) {
+  const angle = Math.atan2(tomato.vy, tomato.vx) + randomBetween(-1.15, 1.15);
+  return {
+    ...tomato,
+    vx: Math.cos(angle),
+    vy: Math.sin(angle),
+    nextTurnAt: now + randomTomatoTurnDelay()
+  };
+}
+
+function randomTomatoTurnDelay() {
+  return randomBetween(TOMATO_TURN_MIN_MS, TOMATO_TURN_MAX_MS);
 }
 
 function prunePlayers(players) {
@@ -660,6 +695,10 @@ function clamp(value, min, max) {
 
 function distance(ax, ay, bx, by) {
   return Math.hypot(ax - bx, ay - by);
+}
+
+function randomBetween(min, max) {
+  return min + Math.random() * (max - min);
 }
 
 function escapeHtml(value) {
