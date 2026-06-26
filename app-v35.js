@@ -90,6 +90,7 @@ let appStarted = false;
 let authMode = "signin";
 let authReady = false;
 let activeSpinAnimationId = null;
+let lastFamilyRenderSignature = "";
 let gameState = null;
 let gameLocalPlayer = null;
 let gameInput = { x: 0, y: 0 };
@@ -143,6 +144,7 @@ async function start() {
   }
   currentUser = { uid: session.uid, displayName: session.name, email: "" };
   familyData = demoStore.read();
+  lastFamilyRenderSignature = familyRenderSignature(familyData);
   upsertMember();
   renderRoute();
 }
@@ -194,7 +196,12 @@ async function enterFamilySpace(session) {
   }
 
   unsubscribeFamily = services.dbFns.onSnapshot(familyRef, (nextSnap) => {
-    familyData = { ...nextSnap.data(), id: nextSnap.id };
+    const nextFamilyData = { ...nextSnap.data(), id: nextSnap.id };
+    const nextSignature = familyRenderSignature(nextFamilyData);
+    const shouldRender = nextSignature !== lastFamilyRenderSignature;
+    familyData = nextFamilyData;
+    lastFamilyRenderSignature = nextSignature;
+    if (!shouldRender) return;
     if (routeName() === "game" && document.querySelector("#game-canvas")) return;
     renderRoute();
   }, (error) => {
@@ -205,6 +212,7 @@ async function enterFamilySpace(session) {
 function renderLogin(message = "") {
   cleanupGame();
   cleanupFamilyListener();
+  lastFamilyRenderSignature = "";
   authMode = "signin";
   appRoot.replaceChildren(templates.login.content.cloneNode(true));
   const form = document.querySelector("#family-login-form");
@@ -2354,6 +2362,11 @@ function displayName() {
   return currentUser?.displayName || readSession()?.name || currentUser?.email?.split("@")[0] || "Someone";
 }
 
+function familyRenderSignature(data = {}) {
+  const { gameArena, updatedAt, ...renderedData } = data;
+  return JSON.stringify(renderedData);
+}
+
 function routeName() {
   return (location.hash.replace(/^#\/?/, "") || "home").toLowerCase();
 }
@@ -2431,6 +2444,7 @@ function logout() {
   if (!window.confirm("Are you sure you want to log out?")) return;
   cleanupGame();
   cleanupFamilyListener();
+  lastFamilyRenderSignature = "";
   localStorage.removeItem(sessionKey);
   currentUser = null;
   familyData = null;
