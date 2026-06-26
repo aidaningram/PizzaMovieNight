@@ -54,7 +54,7 @@ button {
 
 .game-topbar,
 .game-hud,
-.touch-pad {
+.mobile-controls {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
@@ -167,7 +167,7 @@ h1 {
 }
 
 .shoot-button,
-.touch-pad button {
+.fire-button {
   min-height: 46px;
   border-radius: 8px;
   background: linear-gradient(135deg, var(--danger), var(--accent));
@@ -179,25 +179,44 @@ h1 {
   opacity: 0.45;
 }
 
-.touch-pad {
+.mobile-controls {
   display: none;
   gap: 8px;
-  justify-items: center;
+  grid-template-columns: 132px 1fr;
+  align-items: center;
   padding: 10px;
 }
 
-.touch-pad div {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  width: 100%;
+.joystick {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: radial-gradient(circle, rgba(255, 244, 223, 0.16), rgba(255, 244, 223, 0.05));
+  touch-action: none;
 }
 
-.touch-pad button {
-  width: 100%;
-  background: rgba(255, 244, 223, 0.12);
-  color: var(--ink);
+.joystick-thumb {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58px;
+  height: 58px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, var(--accent-2), var(--accent));
   border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.fire-button {
+  min-height: 76px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--danger), var(--accent));
+  color: #111019;
+  font-size: 1.2rem;
+  font-weight: 950;
 }
 
 @media (max-width: 760px) {
@@ -213,7 +232,7 @@ h1 {
     grid-column: 1 / -1;
   }
 
-  .touch-pad {
+  .mobile-controls {
     display: grid;
   }
 }

@@ -7,9 +7,30 @@ const PLAYER_SPEED = 235;
 const PIZZA_SPEED = 520;
 const PIZZA_LIFE_MS = 1300;
 const RESPAWN_MS = 2600;
-const OBSTACLE_INTERVAL_MS = 18000;
+const TOMATO_SIZE = 26;
+const TOMATO_SPEED = 95;
 const HEARTBEAT_MS = 120;
 const STALE_PLAYER_MS = 6000;
+const MAZE_WALLS = [
+  { x: 0, y: 0, w: 960, h: 24 },
+  { x: 0, y: 596, w: 960, h: 24 },
+  { x: 0, y: 0, w: 24, h: 620 },
+  { x: 936, y: 0, w: 24, h: 620 },
+  { x: 120, y: 95, w: 260, h: 30 },
+  { x: 520, y: 95, w: 270, h: 30 },
+  { x: 210, y: 205, w: 30, h: 220 },
+  { x: 360, y: 205, w: 245, h: 30 },
+  { x: 720, y: 205, w: 30, h: 225 },
+  { x: 96, y: 500, w: 260, h: 30 },
+  { x: 468, y: 390, w: 30, h: 145 },
+  { x: 590, y: 500, w: 270, h: 30 }
+];
+const TOMATO_STARTS = [
+  { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
+  { id: "tomato-2", x: 855, y: 122, vx: -0.85, vy: 0.55 },
+  { id: "tomato-3", x: 120, y: 540, vx: 0.75, vy: -0.8 },
+  { id: "tomato-4", x: 840, y: 515, vx: -0.7, vy: -0.65 }
+];
 
 const canvas = document.querySelector("#game-canvas");
 const ctx = canvas.getContext("2d");
@@ -18,7 +39,9 @@ const statusPill = document.querySelector("#connection-status");
 const playerCount = document.querySelector("#player-count");
 const playerStatus = document.querySelector("#player-status");
 const shootButton = document.querySelector("#shoot-button");
-const moveButtons = [...document.querySelectorAll("[data-move]")];
+const mobileShootButton = document.querySelector("#mobile-shoot-button");
+const joystick = document.querySelector("#joystick");
+const joystickThumb = document.querySelector("#joystick-thumb");
 
 let auth = null;
 let db = null;
@@ -28,7 +51,8 @@ let familyRef = null;
 let unsubscribe = null;
 let game = defaultGameState();
 let localPlayer = null;
-let input = { up: false, down: false, left: false, right: false };
+let input = { x: 0, y: 0 };
+let keyboardInput = { up: false, down: false, left: false, right: false };
 let aim = { x: 1, y: 0 };
 let lastFrame = performance.now();
 let lastHeartbeat = 0;
@@ -116,10 +140,8 @@ function defaultGameState() {
   return {
     players: {},
     projectiles: {},
-    walls: buildObstacles(Date.now(), "wall"),
-    hazards: buildObstacles(Date.now() + 4, "hazard"),
-    obstacleSeed: Date.now(),
-    lastObstacleShift: Date.now(),
+    walls: MAZE_WALLS,
+    tomatoes: TOMATO_STARTS.map((tomato) => ({ ...tomato })),
     updatedAt: Date.now()
   };
 }
@@ -131,8 +153,8 @@ function normalizeGame(value) {
     ...(value || {}),
     players: value?.players || {},
     projectiles: value?.projectiles || {},
-    walls: value?.walls || fallback.walls,
-    hazards: value?.hazards || fallback.hazards
+    walls: MAZE_WALLS,
+    tomatoes: value?.tomatoes || fallback.tomatoes
   };
 }
 
@@ -194,29 +216,24 @@ function updateLocal(dt, now) {
 async function syncLocalPlayer(now) {
   const nextGame = normalizeGame(game);
   const projectiles = pruneProjectiles(nextGame.projectiles, now);
+  const tomatoes = moveTomatoes(nextGame.tomatoes, HEARTBEAT_MS / 1000);
   const players = prunePlayers({ ...nextGame.players, [user.uid]: localPlayer });
-  resolveHits(players, projectiles, now);
+  resolveHits(players, projectiles, tomatoes, now);
 
-  const shiftObstacles = now - (nextGame.lastObstacleShift || 0) > OBSTACLE_INTERVAL_MS;
   const patch = {
     "gameArena.players": players,
     "gameArena.projectiles": projectiles,
+    "gameArena.walls": MAZE_WALLS,
+    "gameArena.tomatoes": tomatoes,
     "gameArena.updatedAt": Date.now()
   };
-  if (shiftObstacles) {
-    patch["gameArena.walls"] = buildObstacles(now, "wall");
-    patch["gameArena.hazards"] = buildObstacles(now + 7, "hazard");
-    patch["gameArena.lastObstacleShift"] = Date.now();
-    patch["gameArena.obstacleSeed"] = Date.now();
-  }
   if (demoMode) {
     game = {
       ...nextGame,
       players,
       projectiles,
-      walls: shiftObstacles ? patch["gameArena.walls"] : nextGame.walls,
-      hazards: shiftObstacles ? patch["gameArena.hazards"] : nextGame.hazards,
-      lastObstacleShift: shiftObstacles ? Date.now() : nextGame.lastObstacleShift,
+      walls: MAZE_WALLS,
+      tomatoes,
       updatedAt: Date.now()
     };
     localPlayer = game.players[user.uid];
@@ -225,7 +242,7 @@ async function syncLocalPlayer(now) {
   await dbFns.updateDoc(familyRef, patch).catch(() => {});
 }
 
-function resolveHits(players, projectiles, now) {
+function resolveHits(players, projectiles, tomatoes, now) {
   Object.values(projectiles).forEach((shot) => {
     Object.values(players).forEach((player) => {
       if (!player.alive || player.uid === shot.ownerUid) return;
@@ -239,10 +256,33 @@ function resolveHits(players, projectiles, now) {
 
   Object.values(players).forEach((player) => {
     if (!player.alive) return;
-    if (game.hazards.some((hazard) => circleRectHit(player.x, player.y, PLAYER_SIZE / 2, hazard))) {
+    if (tomatoes.some((tomato) => distance(player.x, player.y, tomato.x, tomato.y) < (PLAYER_SIZE + TOMATO_SIZE) / 2)) {
       player.alive = false;
       player.deadUntil = now + RESPAWN_MS;
     }
+  });
+}
+
+function moveTomatoes(tomatoes, dt) {
+  return tomatoes.map((tomato) => {
+    let next = {
+      ...tomato,
+      x: tomato.x + tomato.vx * TOMATO_SPEED * dt,
+      y: tomato.y + tomato.vy * TOMATO_SPEED * dt
+    };
+    const hitX = next.x < TOMATO_SIZE || next.x > ARENA.width - TOMATO_SIZE
+      || MAZE_WALLS.some((wall) => circleRectHit(next.x, tomato.y, TOMATO_SIZE / 2, wall));
+    const hitY = next.y < TOMATO_SIZE || next.y > ARENA.height - TOMATO_SIZE
+      || MAZE_WALLS.some((wall) => circleRectHit(next.x, next.y, TOMATO_SIZE / 2, wall));
+    if (hitX) {
+      next.vx *= -1;
+      next.x = tomato.x;
+    }
+    if (hitY) {
+      next.vy *= -1;
+      next.y = tomato.y;
+    }
+    return next;
   });
 }
 
@@ -300,7 +340,7 @@ function draw() {
   ctx.fillRect(0, 0, ARENA.width, ARENA.height);
   drawGrid();
   game.walls.forEach(drawWall);
-  game.hazards.forEach(drawHazard);
+  game.tomatoes.forEach(drawTomato);
   Object.values(game.projectiles).forEach(drawPizzaShot);
   Object.values(game.players).forEach(drawPlayer);
 
@@ -335,13 +375,31 @@ function drawWall(wall) {
   ctx.stroke();
 }
 
-function drawHazard(hazard) {
-  ctx.fillStyle = "rgba(239, 71, 111, 0.78)";
-  ctx.strokeStyle = "#ff9cb5";
+function drawTomato(tomato) {
+  ctx.save();
+  ctx.translate(tomato.x, tomato.y);
+  ctx.fillStyle = "#e63946";
+  ctx.strokeStyle = "#7a1721";
   ctx.lineWidth = 3;
-  roundRect(hazard.x, hazard.y, hazard.w, hazard.h, 8);
+  ctx.beginPath();
+  ctx.arc(0, 0, TOMATO_SIZE / 2, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.fillStyle = "#3ddc97";
+  ctx.beginPath();
+  ctx.moveTo(-7, -12);
+  ctx.lineTo(0, -20);
+  ctx.lineTo(7, -12);
+  ctx.lineTo(2, -14);
+  ctx.lineTo(0, -8);
+  ctx.lineTo(-2, -14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 244, 223, 0.8)";
+  ctx.beginPath();
+  ctx.arc(-4, -4, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawPlayer(player) {
@@ -386,30 +444,22 @@ function drawPizzaShot(shot) {
   ctx.restore();
 }
 
-function buildObstacles(seed, type) {
-  const rand = seededRandom(seed + (type === "hazard" ? 401 : 0));
-  const count = type === "hazard" ? 4 : 7;
-  return Array.from({ length: count }, () => ({
-    x: 70 + rand() * (ARENA.width - 180),
-    y: 70 + rand() * (ARENA.height - 170),
-    w: type === "hazard" ? 44 + rand() * 55 : 70 + rand() * 110,
-    h: type === "hazard" ? 36 + rand() * 45 : 34 + rand() * 60
-  }));
-}
-
 function randomSpawn() {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const x = 38 + Math.random() * (ARENA.width - 76);
     const y = 38 + Math.random() * (ARENA.height - 76);
-    const blocked = [...game.walls, ...game.hazards].some((rect) => circleRectHit(x, y, PLAYER_SIZE, rect));
+    const blocked = game.walls.some((rect) => circleRectHit(x, y, PLAYER_SIZE, rect))
+      || game.tomatoes.some((tomato) => distance(x, y, tomato.x, tomato.y) < 90);
     if (!blocked) return { x, y };
   }
   return { x: 60, y: 60 };
 }
 
 function inputVector() {
-  const x = Number(input.right) - Number(input.left);
-  const y = Number(input.down) - Number(input.up);
+  const keyX = Number(keyboardInput.right) - Number(keyboardInput.left);
+  const keyY = Number(keyboardInput.down) - Number(keyboardInput.up);
+  const x = input.x || keyX;
+  const y = input.y || keyY;
   const mag = Math.hypot(x, y) || 1;
   return { x: x / mag, y: y / mag };
 }
@@ -442,14 +492,6 @@ function roundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
-function seededRandom(seed) {
-  let value = Math.sin(seed) * 10000;
-  return () => {
-    value = Math.sin(value) * 10000;
-    return value - Math.floor(value);
-  };
-}
-
 function colorFromUid(uid) {
   const palette = ["#ff7a59", "#f4c95d", "#3ddc97", "#66d9ef", "#c77dff", "#ef476f"];
   let sum = 0;
@@ -473,10 +515,10 @@ function distance(ax, ay, bx, by) {
 }
 
 window.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") input.up = true;
-  if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") input.down = true;
-  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") input.left = true;
-  if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") input.right = true;
+  if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") keyboardInput.up = true;
+  if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") keyboardInput.down = true;
+  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") keyboardInput.left = true;
+  if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") keyboardInput.right = true;
   if (event.key === " ") {
     event.preventDefault();
     shoot();
@@ -484,21 +526,37 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keyup", (event) => {
-  if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") input.up = false;
-  if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") input.down = false;
-  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") input.left = false;
-  if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") input.right = false;
+  if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") keyboardInput.up = false;
+  if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") keyboardInput.down = false;
+  if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") keyboardInput.left = false;
+  if (event.key === "ArrowRight" || event.key.toLowerCase() === "d") keyboardInput.right = false;
 });
 
 shootButton.addEventListener("click", shoot);
+mobileShootButton.addEventListener("click", shoot);
 
-moveButtons.forEach((button) => {
-  const direction = button.dataset.move;
-  const set = (value) => {
-    input[direction] = value;
-  };
-  button.addEventListener("pointerdown", () => set(true));
-  button.addEventListener("pointerup", () => set(false));
-  button.addEventListener("pointercancel", () => set(false));
-  button.addEventListener("pointerleave", () => set(false));
-});
+joystick.addEventListener("pointerdown", handleJoystick);
+joystick.addEventListener("pointermove", handleJoystick);
+joystick.addEventListener("pointerup", resetJoystick);
+joystick.addEventListener("pointercancel", resetJoystick);
+
+function handleJoystick(event) {
+  joystick.setPointerCapture(event.pointerId);
+  const rect = joystick.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const max = rect.width * 0.34;
+  const dx = event.clientX - centerX;
+  const dy = event.clientY - centerY;
+  const mag = Math.hypot(dx, dy);
+  const clamped = Math.min(max, mag);
+  const nx = mag ? dx / mag : 0;
+  const ny = mag ? dy / mag : 0;
+  input = { x: nx * (clamped / max), y: ny * (clamped / max) };
+  joystickThumb.style.transform = `translate(calc(-50% + ${nx * clamped}px), calc(-50% + ${ny * clamped}px))`;
+}
+
+function resetJoystick() {
+  input = { x: 0, y: 0 };
+  joystickThumb.style.transform = "translate(-50%, -50%)";
+}
