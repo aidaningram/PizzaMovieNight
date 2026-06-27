@@ -64,6 +64,7 @@ const GAME_SPECIAL_TOPPING_CHANCE = 0.1;
 const GAME_SPECIAL_TOPPING_DURATION_MS = 10000;
 const GAME_MUSHROOM_FUSE_MS = 700;
 const GAME_MUSHROOM_SPLASH_RADIUS = 92;
+const GAME_MUSHROOM_EXPLOSION_MS = 360;
 const GAME_BASIL_FIRE_MS = 90;
 const GAME_BASIL_LIFE_MS = 620;
 const GAME_MEATBALL_SIZE = 84;
@@ -119,6 +120,7 @@ let gameFireHeld = false;
 let gameAnimationId = null;
 let gameRemoteProjectiles = {};
 let gameVisualPlayers = {};
+let gameExplosionEffects = [];
 let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
@@ -1284,6 +1286,7 @@ function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog
 }
 
 function explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, projectiles, now) {
+  addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
     if (!player.alive || player.powerup === "meatball" || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
@@ -1298,6 +1301,17 @@ function explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog,
   });
   gameRemovedProjectileIds.add(shot.id);
   delete projectiles[shot.id];
+}
+
+function addGameExplosionEffect(x, y, radius, now = Date.now()) {
+  gameExplosionEffects.push({
+    id: `explosion-${now}-${Math.random().toString(36).slice(2)}`,
+    x,
+    y,
+    radius,
+    createdAt: now
+  });
+  gameExplosionEffects = gameExplosionEffects.slice(-8);
 }
 
 function killGamePlayerByUid(victimUid, killerUid, players, leaderboard, nextKillLog, hits, now, hitPrefix) {
@@ -1839,6 +1853,7 @@ function drawGame() {
   });
   Object.values(gameState.pepperoniPickups || {}).forEach((pickup) => drawGameToppingPickup(ctx, pickup));
   Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
+  drawGameExplosionEffects(ctx);
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
   if (gameLocalPlayer && !gameLocalPlayer.alive) {
@@ -2184,18 +2199,35 @@ function drawGamePlayer(ctx, player) {
 }
 
 function drawGamePizzaShot(ctx, shot) {
-  if ((shot.type || "pepperoni") === "mushroom") {
-    const age = Date.now() - Number(shot.createdAt || Date.now());
-    const pulse = Math.min(1, age / GAME_MUSHROOM_FUSE_MS);
+  drawGameTopping(ctx, shot.type || "pepperoni", shot.x, shot.y, GAME_PIZZA_PROJECTILE_SIZE / 2, 3);
+}
+
+function drawGameExplosionEffects(ctx) {
+  const now = Date.now();
+  gameExplosionEffects = gameExplosionEffects.filter((effect) => now - effect.createdAt <= GAME_MUSHROOM_EXPLOSION_MS);
+  gameExplosionEffects.forEach((effect) => {
+    const age = now - effect.createdAt;
+    const progress = Math.min(1, age / GAME_MUSHROOM_EXPLOSION_MS);
     ctx.save();
-    ctx.globalAlpha = 0.18 + pulse * 0.16;
+    ctx.globalAlpha = 0.34 * (1 - progress);
     ctx.fillStyle = "#d9b08c";
     ctx.beginPath();
-    ctx.arc(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS * pulse, 0, Math.PI * 2);
+    ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 0.85 * (1 - progress);
+    ctx.strokeStyle = "#fff4df";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(effect.x, effect.y, effect.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.65 * (1 - progress);
+    ctx.strokeStyle = "#8f4b30";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(effect.x, effect.y, effect.radius * 0.58, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
-  }
-  drawGameTopping(ctx, shot.type || "pepperoni", shot.x, shot.y, GAME_PIZZA_PROJECTILE_SIZE / 2, 3);
+  });
 }
 
 function randomGameSpawn() {
@@ -2403,6 +2435,7 @@ function cleanupGame() {
   gameLocalPlayer = null;
   gameRemoteProjectiles = {};
   gameVisualPlayers = {};
+  gameExplosionEffects = [];
   gameFireHeld = false;
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
