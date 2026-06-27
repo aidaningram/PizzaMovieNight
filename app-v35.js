@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 13;
+const GAME_VERSION = 14;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -59,6 +59,12 @@ const GAME_PEPPERONI_PICKUP_SIZE = 22;
 const GAME_MAX_MAP_PEPPERONI = 15;
 const GAME_MAX_PLAYER_PEPPERONI = 10;
 const GAME_PEPPERONI_SPAWN_MS = 2000;
+const GAME_SPECIAL_TOPPING_CHANCE = 0.1;
+const GAME_SPECIAL_TOPPING_DURATION_MS = 10000;
+const GAME_MUSHROOM_FUSE_MS = 700;
+const GAME_MUSHROOM_SPLASH_RADIUS = 92;
+const GAME_BASIL_FIRE_MS = 90;
+const GAME_MEATBALL_SIZE = 84;
 const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_REMOTE_PLAYER_SMOOTHING = 18;
@@ -107,6 +113,7 @@ let gameAim = { x: 1, y: 0 };
 let gameLastFrame = performance.now();
 let gameLastHeartbeat = 0;
 let gameLastShotAt = 0;
+let gameFireHeld = false;
 let gameAnimationId = null;
 let gameRemoteProjectiles = {};
 let gameVisualPlayers = {};
@@ -997,6 +1004,9 @@ function createGamePlayer() {
     aimX: 1,
     aimY: 0,
     pepperoniCount: 0,
+    powerup: "",
+    powerupUntil: 0,
+    savedPepperoniCount: 0,
     alive: true,
     deadUntil: 0,
     lastSeen: Date.now()
@@ -1020,11 +1030,15 @@ function gameTick(now) {
 function updateLocalGame(dt, now) {
   if (!currentUser?.uid || !gameLocalPlayer) return;
   const player = { ...gameLocalPlayer };
+  normalizeGamePlayerPowerup(player, now);
   const hitCountBefore = Object.keys(gameState.hits || {}).length;
   const hits = pruneGameHits(gameState.hits || {}, now);
   const incomingHit = hits[currentUser.uid];
   const isRespawning = player.deadUntil && now < player.deadUntil;
-  if (incomingHit && player.alive && !isRespawning) {
+  if (incomingHit && player.powerup === "meatball") {
+    gameConsumedHitIds.add(gameHitId(incomingHit, currentUser.uid));
+    delete hits[currentUser.uid];
+  } else if (incomingHit && player.alive && !isRespawning) {
     gameConsumedHitIds.add(gameHitId(incomingHit, currentUser.uid));
     player.alive = false;
     player.deadUntil = Number(incomingHit.deadUntil) || now + GAME_RESPAWN_MS;
@@ -1045,10 +1059,13 @@ function updateLocalGame(dt, now) {
       gameAim = vector;
       player.aimX = vector.x;
       player.aimY = vector.y;
-      const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * GAME_PLAYER_SPEED * dt, vector.y * GAME_PLAYER_SPEED * dt);
+      const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * GAME_PLAYER_SPEED * dt, vector.y * GAME_PLAYER_SPEED * dt, gamePlayerHitRadius(player));
       player.x = next.x;
       player.y = next.y;
     }
+  }
+  if (gameFireHeld && player.powerup === "basil") {
+    shootGamePizza();
   }
 
   player.lastSeen = now;
@@ -1067,7 +1084,7 @@ function updateLocalGame(dt, now) {
     pepperoniPickups = spawned.pickups;
     lastPepperoniSpawnAt = spawned.lastSpawnAt;
   }
-  collectGamePepperoni(player, pepperoniPickups);
+  collectGameToppings(player, pepperoniPickups, now);
   players[currentUser.uid] = player;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
@@ -1193,32 +1210,61 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
 function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog, hits, now) {
   Object.values(projectiles).forEach((shot) => {
     if (shot.ownerUid !== currentUser.uid) return;
+    const shotType = shot.type || "pepperoni";
+    if (shotType === "mushroom" && now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS) {
+      explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, projectiles, now);
+      return;
+    }
+    if (gameProjectileHitsWall(shot)) {
+      if (shotType === "mushroom") {
+        explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, projectiles, now);
+      } else {
+        gameRemovedProjectileIds.add(shot.id);
+        delete projectiles[shot.id];
+      }
+      return;
+    }
     Object.values(players).forEach((player) => {
       if (!projectiles[shot.id]) return;
       const playerIsRespawning = player.deadUntil && now < player.deadUntil;
-      if (!player.alive || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
-      if (gameDistance(player.x, player.y, shot.x, shot.y) < GAME_PLAYER_SIZE) {
-        player.alive = false;
-        player.deadUntil = now + GAME_RESPAWN_MS;
-        hits[player.uid] = {
-          id: `${shot.id}-${player.uid}`,
-          byUid: shot.ownerUid,
-          deadUntil: player.deadUntil,
-          createdAt: now
-        };
-        recordGameKill(leaderboard, nextKillLog, shot.ownerUid, player.uid, players);
-        gameRemovedProjectileIds.add(shot.id);
-        delete projectiles[shot.id];
+      if (!player.alive || player.powerup === "meatball" || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
+      if (gameDistance(player.x, player.y, shot.x, shot.y) < gamePlayerHitRadius(player) + GAME_PIZZA_PROJECTILE_SIZE / 2) {
+        if (shotType === "mushroom") {
+          explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, projectiles, now);
+        } else {
+          killGamePlayerByUid(player.uid, shot.ownerUid, players, leaderboard, nextKillLog, hits, now, shot.id);
+          gameRemovedProjectileIds.add(shot.id);
+          delete projectiles[shot.id];
+        }
       }
     });
     if (!projectiles[shot.id]) return;
     zombies.forEach((zombie) => {
       if (!projectiles[shot.id] || !zombie.alive) return;
       if (gameDistance(zombie.x, zombie.y, shot.x, shot.y) < GAME_ZOMBIE_RADIUS + GAME_PIZZA_PROJECTILE_SIZE / 2) {
-        zombie.alive = false;
-        zombie.deadUntil = now + GAME_ZOMBIE_RESPAWN_MS;
-        gameRemovedProjectileIds.add(shot.id);
-        delete projectiles[shot.id];
+        if (shotType === "mushroom") {
+          explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, projectiles, now);
+        } else {
+          killGameZombie(zombie, now);
+          gameRemovedProjectileIds.add(shot.id);
+          delete projectiles[shot.id];
+        }
+      }
+    });
+  });
+
+  Object.values(players).forEach((player) => {
+    if (player.uid !== currentUser.uid || !player.alive || player.powerup !== "meatball") return;
+    Object.values(players).forEach((target) => {
+      const targetIsRespawning = target.deadUntil && now < target.deadUntil;
+      if (target.uid === player.uid || !target.alive || target.powerup === "meatball" || targetIsRespawning || hits[target.uid]) return;
+      if (gameDistance(player.x, player.y, target.x, target.y) < GAME_MEATBALL_SIZE / 2 + gamePlayerHitRadius(target)) {
+        killGamePlayerByUid(target.uid, player.uid, players, leaderboard, nextKillLog, hits, now, `meatball-${now}`);
+      }
+    });
+    zombies.forEach((zombie) => {
+      if (zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < GAME_MEATBALL_SIZE / 2 + GAME_ZOMBIE_RADIUS) {
+        killGameZombie(zombie, now);
       }
     });
   });
@@ -1226,11 +1272,48 @@ function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
     if (player.uid !== currentUser.uid || !player.alive || playerIsRespawning) return;
-    if (zombies.some((zombie) => zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < GAME_PLAYER_SIZE / 2 + GAME_ZOMBIE_RADIUS)) {
+    if (player.powerup === "meatball") return;
+    if (zombies.some((zombie) => zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < gamePlayerHitRadius(player) + GAME_ZOMBIE_RADIUS)) {
       player.alive = false;
       player.deadUntil = now + GAME_RESPAWN_MS;
     }
   });
+}
+
+function explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, projectiles, now) {
+  Object.values(players).forEach((player) => {
+    const playerIsRespawning = player.deadUntil && now < player.deadUntil;
+    if (!player.alive || player.powerup === "meatball" || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
+    if (gameDistance(player.x, player.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + gamePlayerHitRadius(player)) {
+      killGamePlayerByUid(player.uid, shot.ownerUid, players, leaderboard, nextKillLog, hits, now, shot.id);
+    }
+  });
+  zombies.forEach((zombie) => {
+    if (zombie.alive && gameDistance(zombie.x, zombie.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + GAME_ZOMBIE_RADIUS) {
+      killGameZombie(zombie, now);
+    }
+  });
+  gameRemovedProjectileIds.add(shot.id);
+  delete projectiles[shot.id];
+}
+
+function killGamePlayerByUid(victimUid, killerUid, players, leaderboard, nextKillLog, hits, now, hitPrefix) {
+  const victim = players[victimUid];
+  if (!victim || !victim.alive || victim.powerup === "meatball" || hits[victimUid]) return;
+  victim.alive = false;
+  victim.deadUntil = now + GAME_RESPAWN_MS;
+  hits[victimUid] = {
+    id: `${hitPrefix}-${victimUid}`,
+    byUid: killerUid,
+    deadUntil: victim.deadUntil,
+    createdAt: now
+  };
+  recordGameKill(leaderboard, nextKillLog, killerUid, victimUid, players);
+}
+
+function killGameZombie(zombie, now = Date.now()) {
+  zombie.alive = false;
+  zombie.deadUntil = now + GAME_ZOMBIE_RESPAWN_MS;
 }
 
 function ensureGameLeaderboardEntry(leaderboard = {}, player) {
@@ -1279,9 +1362,16 @@ function spawnGamePepperoniPickups(pickups = {}, lastSpawnAt = 0, now = Date.now
   }
   const spawn = randomGamePepperoniSpawn(nextPickups);
   if (!spawn) return { pickups: nextPickups, lastSpawnAt: now };
-  const id = `pepperoni-${now}-${Math.floor(Math.random() * 100000)}`;
-  nextPickups[id] = { id, x: spawn.x, y: spawn.y, createdAt: now };
+  const type = randomGameToppingType();
+  const id = `${type}-${now}-${Math.floor(Math.random() * 100000)}`;
+  nextPickups[id] = { id, type, x: spawn.x, y: spawn.y, createdAt: now };
   return { pickups: nextPickups, lastSpawnAt: now };
+}
+
+function randomGameToppingType() {
+  if (Math.random() >= GAME_SPECIAL_TOPPING_CHANCE) return "pepperoni";
+  const specials = ["mushroom", "meatball", "basil"];
+  return specials[Math.floor(Math.random() * specials.length)];
 }
 
 function randomGamePepperoniSpawn(existingPickups = {}) {
@@ -1299,15 +1389,55 @@ function randomGamePepperoniSpawn(existingPickups = {}) {
   return null;
 }
 
-function collectGamePepperoni(player, pickups) {
-  if (!player?.alive || Number(player.pepperoniCount || 0) >= GAME_MAX_PLAYER_PEPPERONI) return;
+function collectGameToppings(player, pickups, now = Date.now()) {
+  if (!player?.alive) return;
   Object.values(pickups || {}).forEach((pickup) => {
-    if (Number(player.pepperoniCount || 0) >= GAME_MAX_PLAYER_PEPPERONI) return;
     if (gameDistance(player.x, player.y, pickup.x, pickup.y) <= GAME_PLAYER_SIZE / 2 + GAME_PEPPERONI_PICKUP_SIZE / 2) {
-      player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0) + 1);
+      const type = pickup.type || "pepperoni";
+      if (type === "pepperoni") {
+        if (!canCollectAmmoTopping(player)) return;
+        player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0) + 1);
+      } else {
+        applyGamePowerup(player, type, now);
+      }
       delete pickups[pickup.id];
     }
   });
+}
+
+function canCollectAmmoTopping(player) {
+  if (player.powerup === "meatball" || player.powerup === "basil") return false;
+  return Number(player.pepperoniCount || 0) < GAME_MAX_PLAYER_PEPPERONI;
+}
+
+function applyGamePowerup(player, type, now = Date.now()) {
+  normalizeGamePlayerPowerup(player, now);
+  const currentAmmo = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
+  player.powerup = type;
+  player.powerupUntil = now + GAME_SPECIAL_TOPPING_DURATION_MS;
+  if (type === "mushroom") {
+    player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, currentAmmo + 1);
+    player.savedPepperoniCount = 0;
+    return;
+  }
+  player.savedPepperoniCount = currentAmmo;
+  if (type === "meatball" || type === "basil") {
+    player.pepperoniCount = currentAmmo;
+  }
+}
+
+function normalizeGamePlayerPowerup(player, now = Date.now()) {
+  if (!player?.powerup || !player.powerupUntil || now < Number(player.powerupUntil || 0)) return;
+  if (player.powerup === "meatball" || player.powerup === "basil") {
+    player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.savedPepperoniCount || player.pepperoniCount || 0));
+  }
+  player.powerup = "";
+  player.powerupUntil = 0;
+  player.savedPepperoniCount = 0;
+}
+
+function gamePlayerHitRadius(player) {
+  return player?.powerup === "meatball" ? GAME_MEATBALL_SIZE / 2 : GAME_PLAYER_SIZE / 2;
 }
 
 function moveGameZombies(zombies, players, dt, now = Date.now()) {
@@ -1507,11 +1637,13 @@ function pruneGameProjectiles(projectiles, now) {
   const next = {};
   Object.values(projectiles || {}).forEach((shot) => {
     if (gameRemovedProjectileIds.has(shot.id)) return;
-    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS || !gameProjectileInBounds(shot) || gameProjectileHitsWall(shot)) {
+    const shotType = shot.type || "pepperoni";
+    const mushroomWaitingToBurst = shotType === "mushroom" && (gameProjectileHitsWall(shot) || now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS);
+    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS || !gameProjectileInBounds(shot) || (shotType !== "mushroom" && gameProjectileHitsWall(shot))) {
       gameRemovedProjectileIds.add(shot.id);
       return;
     }
-    next[shot.id] = { ...shot };
+    next[shot.id] = { ...shot, burstReady: mushroomWaitingToBurst || Boolean(shot.burstReady) };
   });
   return next;
 }
@@ -1556,12 +1688,18 @@ function mergeGameProjectiles(remote = {}, local = {}) {
 
 function shootGamePizza() {
   const now = Date.now();
-  if (!currentUser?.uid || !gameLocalPlayer?.alive || now - gameLastShotAt < 430 || Number(gameLocalPlayer.pepperoniCount || 0) <= 0) return;
+  if (!currentUser?.uid || !gameLocalPlayer?.alive) return;
+  normalizeGamePlayerPowerup(gameLocalPlayer, now);
+  const shotType = gameCurrentShotType(gameLocalPlayer);
+  const cooldown = shotType === "basil" ? GAME_BASIL_FIRE_MS : 430;
+  if (!shotType || now - gameLastShotAt < cooldown) return;
   gameLastShotAt = now;
-  gameLocalPlayer = {
-    ...gameLocalPlayer,
-    pepperoniCount: Math.max(0, Number(gameLocalPlayer.pepperoniCount || 0) - 1)
-  };
+  if (shotType !== "basil") {
+    gameLocalPlayer = {
+      ...gameLocalPlayer,
+      pepperoniCount: Math.max(0, Number(gameLocalPlayer.pepperoniCount || 0) - 1)
+    };
+  }
   const shotId = `${currentUser.uid}-${now}`;
   const mag = Math.hypot(gameAim.x, gameAim.y) || 1;
   const shotOffset = GAME_PLAYER_SIZE / 2 + 12;
@@ -1572,6 +1710,7 @@ function shootGamePizza() {
     y: gameLocalPlayer.y + (gameAim.y / mag) * shotOffset,
     vx: (gameAim.x / mag) * GAME_PIZZA_SPEED,
     vy: (gameAim.y / mag) * GAME_PIZZA_SPEED,
+    type: shotType,
     createdAt: now,
     updatedAt: now
   };
@@ -1590,6 +1729,14 @@ function shootGamePizza() {
   writeGameArenaSharedState(gameState);
 }
 
+function gameCurrentShotType(player) {
+  if (!player?.alive || player.powerup === "meatball") return "";
+  if (player.powerup === "basil") return "basil";
+  if (Number(player.pepperoniCount || 0) <= 0) return "";
+  if (player.powerup === "mushroom") return "mushroom";
+  return "pepperoni";
+}
+
 function drawGame() {
   const canvas = document.querySelector("#game-canvas");
   if (!canvas || !gameState) return;
@@ -1605,7 +1752,7 @@ function drawGame() {
   gameState.zombies.forEach((zombie) => {
     if (zombie.alive) drawGameZombie(ctx, zombie);
   });
-  Object.values(gameState.pepperoniPickups || {}).forEach((pickup) => drawGamePepperoniPickup(ctx, pickup));
+  Object.values(gameState.pepperoniPickups || {}).forEach((pickup) => drawGameToppingPickup(ctx, pickup));
   Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
@@ -1724,13 +1871,29 @@ function getGameZombieImage() {
   return gameZombieImage;
 }
 
-function drawGamePepperoniPickup(ctx, pickup) {
+function drawGameToppingPickup(ctx, pickup) {
   ctx.save();
   ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
   ctx.shadowBlur = 8;
   ctx.shadowOffsetY = 3;
-  drawGamePepperoniDisk(ctx, pickup.x, pickup.y, GAME_PEPPERONI_PICKUP_SIZE / 2, 2);
+  drawGameTopping(ctx, pickup.type || "pepperoni", pickup.x, pickup.y, GAME_PEPPERONI_PICKUP_SIZE / 2, 2);
   ctx.restore();
+}
+
+function drawGameTopping(ctx, type, x, y, radius, lineWidth = 2) {
+  if (type === "mushroom") {
+    drawGameMushroom(ctx, x, y, radius, lineWidth);
+    return;
+  }
+  if (type === "basil") {
+    drawGameBasilLeaf(ctx, x, y, radius * 1.25, lineWidth);
+    return;
+  }
+  if (type === "meatball") {
+    drawGameMeatball(ctx, x, y, radius * 1.05, lineWidth);
+    return;
+  }
+  drawGamePepperoniDisk(ctx, x, y, radius, lineWidth);
 }
 
 function drawGamePepperoniDisk(ctx, x, y, radius, lineWidth = 2) {
@@ -1760,6 +1923,83 @@ function drawGamePepperoniDisk(ctx, x, y, radius, lineWidth = 2) {
   ctx.restore();
 }
 
+function drawGameMushroom(ctx, x, y, radius, lineWidth = 2) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#f7f0df";
+  ctx.strokeStyle = "#6b4b34";
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(-radius * 0.62, radius * 0.18);
+  ctx.quadraticCurveTo(0, radius * 0.48, radius * 0.62, radius * 0.18);
+  ctx.lineTo(radius * 0.34, radius * 0.95);
+  ctx.quadraticCurveTo(0, radius * 1.18, -radius * 0.34, radius * 0.95);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#d9b08c";
+  ctx.beginPath();
+  ctx.arc(0, -radius * 0.08, radius * 0.9, Math.PI, 0);
+  ctx.quadraticCurveTo(0, radius * 0.4, -radius * 0.9, -radius * 0.08);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(91, 55, 34, 0.35)";
+  [-0.38, 0, 0.38].forEach((offset) => {
+    ctx.beginPath();
+    ctx.arc(offset * radius, -radius * 0.08, radius * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawGameBasilLeaf(ctx, x, y, radius, lineWidth = 2) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.45);
+  ctx.fillStyle = "#45b36b";
+  ctx.strokeStyle = "#174e2a";
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(0, -radius);
+  ctx.bezierCurveTo(radius * 0.8, -radius * 0.52, radius * 0.65, radius * 0.62, 0, radius);
+  ctx.bezierCurveTo(-radius * 0.65, radius * 0.62, -radius * 0.8, -radius * 0.52, 0, -radius);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 244, 223, 0.45)";
+  ctx.lineWidth = Math.max(1, lineWidth - 0.5);
+  ctx.beginPath();
+  ctx.moveTo(0, -radius * 0.65);
+  ctx.quadraticCurveTo(radius * 0.12, 0, 0, radius * 0.68);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGameMeatball(ctx, x, y, radius, lineWidth = 2) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#8f4b30";
+  ctx.strokeStyle = "#442012";
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255, 244, 223, 0.35)";
+  ctx.beginPath();
+  ctx.arc(-radius * 0.32, -radius * 0.36, radius * 0.22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(65, 24, 14, 0.35)";
+  [
+    { x: radius * 0.28, y: -radius * 0.12, r: radius * 0.16 },
+    { x: -radius * 0.06, y: radius * 0.35, r: radius * 0.13 }
+  ].forEach((spot) => {
+    ctx.beginPath();
+    ctx.arc(spot.x, spot.y, spot.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
 function drawGamePlayer(ctx, player) {
   const radius = GAME_PLAYER_SIZE / 2;
   const aimX = Number(player.aimX || 1);
@@ -1769,6 +2009,21 @@ function drawGamePlayer(ctx, player) {
   ctx.save();
   ctx.globalAlpha = player.alive ? 1 : 0.35;
   ctx.translate(player.x, player.y);
+  if (player.powerup === "meatball") {
+    drawGameMeatball(ctx, 0, 0, GAME_MEATBALL_SIZE / 2, 5);
+    ctx.fillStyle = "#fff4df";
+    ctx.font = "900 20px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), 0, 1);
+    ctx.restore();
+    ctx.fillStyle = "#fff4df";
+    ctx.font = "900 16px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(player.name || "Player", player.x, player.y - GAME_MEATBALL_SIZE / 2 - 10);
+    return;
+  }
   ctx.rotate(facingAngle);
 
   const tipX = radius;
@@ -1807,7 +2062,7 @@ function drawGamePlayer(ctx, player) {
   ctx.quadraticCurveTo(12, -9, 24, -2);
   ctx.stroke();
 
-  const pepperoniSpots = [
+  const toppingSpots = [
     { x: -10, y: -8, r: 6.5 },
     { x: 4, y: 9, r: 6 },
     { x: 17, y: -4, r: 5.5 },
@@ -1815,11 +2070,12 @@ function drawGamePlayer(ctx, player) {
     { x: -2, y: -18, r: 5 },
     { x: 20, y: 9, r: 4.5 }
   ];
-  const pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
-  for (let index = 0; index < pepperoniCount; index += 1) {
-    const spot = pepperoniSpots[index % pepperoniSpots.length];
-    const stack = Math.floor(index / pepperoniSpots.length);
-    drawGamePepperoniDisk(ctx, spot.x + stack * 2, spot.y - stack * 2, Math.max(4, spot.r - stack * 0.9), 1.7);
+  const toppingType = player.powerup === "mushroom" ? "mushroom" : player.powerup === "basil" ? "basil" : "pepperoni";
+  const visualCount = player.powerup === "basil" ? 5 : Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
+  for (let index = 0; index < visualCount; index += 1) {
+    const spot = toppingSpots[index % toppingSpots.length];
+    const stack = Math.floor(index / toppingSpots.length);
+    drawGameTopping(ctx, toppingType, spot.x + stack * 2, spot.y - stack * 2, Math.max(4, spot.r - stack * 0.9), 1.7);
   }
 
   ctx.fillStyle = player.color;
@@ -1843,7 +2099,18 @@ function drawGamePlayer(ctx, player) {
 }
 
 function drawGamePizzaShot(ctx, shot) {
-  drawGamePepperoniDisk(ctx, shot.x, shot.y, GAME_PIZZA_PROJECTILE_SIZE / 2, 3);
+  if ((shot.type || "pepperoni") === "mushroom") {
+    const age = Date.now() - Number(shot.createdAt || Date.now());
+    const pulse = Math.min(1, age / GAME_MUSHROOM_FUSE_MS);
+    ctx.save();
+    ctx.globalAlpha = 0.18 + pulse * 0.16;
+    ctx.fillStyle = "#d9b08c";
+    ctx.beginPath();
+    ctx.arc(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  drawGameTopping(ctx, shot.type || "pepperoni", shot.x, shot.y, GAME_PIZZA_PROJECTILE_SIZE / 2, 3);
 }
 
 function randomGameSpawn() {
@@ -1868,8 +2135,7 @@ function gameInputVector() {
   return { x: x / mag, y: y / mag };
 }
 
-function moveGamePlayerWithWalls(x, y, dx, dy) {
-  const radius = GAME_PLAYER_SIZE / 2;
+function moveGamePlayerWithWalls(x, y, dx, dy, radius = GAME_PLAYER_SIZE / 2) {
   let nextX = gameClamp(x + dx, radius, GAME_ARENA.width - radius);
   let nextY = gameClamp(y + dy, radius, GAME_ARENA.height - radius);
   if (gameState.walls.some((wall) => gameCircleRectHit(nextX, y, radius, wall))) nextX = x;
@@ -1906,7 +2172,13 @@ function attachGameControls() {
   const joystick = document.querySelector("#joystick");
 
   shootButton?.addEventListener("pointerdown", shootGameFromButton);
+  shootButton?.addEventListener("pointerup", stopGameFire);
+  shootButton?.addEventListener("pointercancel", stopGameFire);
+  shootButton?.addEventListener("pointerleave", stopGameFire);
   mobileShootButton?.addEventListener("pointerdown", shootGameFromButton);
+  mobileShootButton?.addEventListener("pointerup", stopGameFire);
+  mobileShootButton?.addEventListener("pointercancel", stopGameFire);
+  mobileShootButton?.addEventListener("pointerleave", stopGameFire);
   leaderboardButton?.addEventListener("click", () => {
     leaderboardPanel.hidden = false;
     renderGameLeaderboard();
@@ -1924,7 +2196,14 @@ function attachGameControls() {
 
 function shootGameFromButton(event) {
   event.preventDefault();
+  event.currentTarget?.setPointerCapture?.(event.pointerId);
+  gameFireHeld = true;
   shootGamePizza();
+}
+
+function stopGameFire(event) {
+  event?.currentTarget?.releasePointerCapture?.(event.pointerId);
+  gameFireHeld = false;
 }
 
 function handleGameJoystick(event) {
@@ -2006,6 +2285,7 @@ function cleanupGame() {
   gameLocalPlayer = null;
   gameRemoteProjectiles = {};
   gameVisualPlayers = {};
+  gameFireHeld = false;
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   gameConsumedHitIds = new Set();
