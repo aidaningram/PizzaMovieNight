@@ -940,6 +940,7 @@ function joinGameArena() {
 function receiveGameSnapshot() {
   if (!document.querySelector("#game-canvas")) return;
   const remoteGame = normalizeGame(familyData?.gameArena);
+  const zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.zombieDeaths, gameState?.zombieDeaths), Date.now());
   const ownPlayer = gameLocalPlayer || remoteGame.players[currentUser?.uid];
   const players = {
     ...remoteGame.players,
@@ -947,11 +948,13 @@ function receiveGameSnapshot() {
   };
   gameRemoteProjectiles = remoteGame.projectiles;
   const localZombies = gameState?.version === GAME_VERSION && gameState?.zombies?.length ? gameState.zombies : null;
+  const remoteZombies = applyGameZombieDeaths(remoteGame.zombies, zombieDeaths);
   const shouldKeepLocalZombies = currentUser?.uid === gameHostUid(players) && localZombies;
   gameState = {
     ...remoteGame,
     players,
-    zombies: shouldKeepLocalZombies ? mergeGameZombies(remoteGame.zombies, localZombies) : remoteGame.zombies,
+    zombieDeaths,
+    zombies: shouldKeepLocalZombies ? mergeGameZombies(remoteZombies, localZombies, zombieDeaths) : remoteZombies,
     projectiles: mergeGameProjectiles(remoteGame.projectiles, gameState?.projectiles || {})
   };
   gameLocalPlayer = ownPlayer;
@@ -1022,6 +1025,12 @@ function mergeGameTimedMaps(first = {}, second = {}) {
     ...(first || {}),
     ...(second || {})
   };
+}
+
+function addGameTimedMapPatch(patch, path, items = {}) {
+  Object.entries(items || {}).forEach(([id, value]) => {
+    patch[`${path}/${id}`] = value;
+  });
 }
 
 function gameTimedMapSignature(items = {}) {
@@ -1128,7 +1137,7 @@ function updateLocalGame(dt, now) {
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
-  let zombieDeaths = pruneGameTimedMap(isHost ? gameState.zombieDeaths || {} : serverGame.zombieDeaths || {}, now);
+  let zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, gameState.zombieDeaths), now);
   const zombies = isHost ? moveGameZombies(gameState.zombies, players, dt, now, zombieDeaths) : applyGameZombieDeaths(serverGame.zombies, zombieDeaths);
   let collectedPickups = pruneGameTimedMap(isHost ? gameState.collectedPickups || {} : serverGame.collectedPickups || {}, now, GAME_PICKUP_CLAIM_TTL_MS);
   let pepperoniPickups = filterGameAvailablePickups(isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(serverGame.pepperoniPickups || {}) }, collectedPickups);
@@ -1192,7 +1201,7 @@ async function syncLocalGame(now) {
       ? serverGame.zombies
       : nextGame.zombies;
   const syncedCollectedPickups = isHost ? nextGame.collectedPickups : mergeGameTimedMaps(serverGame.collectedPickups, nextGame.collectedPickups);
-  const syncedZombieDeaths = isHost ? nextGame.zombieDeaths : mergeGameTimedMaps(serverGame.zombieDeaths, nextGame.zombieDeaths);
+  const syncedZombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, nextGame.zombieDeaths), now);
   const syncedPepperoniPickups = filterGameAvailablePickups(isHost ? nextGame.pepperoniPickups : serverGame.pepperoniPickups, syncedCollectedPickups);
   const syncedLastPepperoniSpawnAt = isHost ? nextGame.lastPepperoniSpawnAt : serverGame.lastPepperoniSpawnAt;
   const nextArena = {
@@ -1239,9 +1248,9 @@ async function writeGameArena(nextArena) {
     const mergedZombieDeaths = mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths);
     const mergedCollectedPickups = mergeGameTimedMaps(existingArena.collectedPickups, nextArena.collectedPickups);
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
-    if (Object.keys(mergedZombieDeaths || {}).length) patch.zombieDeaths = mergedZombieDeaths;
     patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {});
-    if (Object.keys(mergedCollectedPickups || {}).length) patch.collectedPickups = mergedCollectedPickups;
+    addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+    addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
     patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
   }
 
@@ -1269,8 +1278,8 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     killLog: nextArena.killLog || [],
     updatedAt: Date.now()
   };
-  if (Object.keys(mergedCollectedPickups || {}).length) patch.collectedPickups = mergedCollectedPickups;
-  if (Object.keys(mergedZombieDeaths || {}).length) patch.zombieDeaths = mergedZombieDeaths;
+  addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
+  addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
   if (options.includeZombies) {
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
   }
@@ -1686,9 +1695,9 @@ function applyGameZombieDeaths(zombies = [], zombieDeaths = {}) {
   });
 }
 
-function mergeGameZombies(remote = [], local = []) {
-  const remoteZombies = normalizeGameZombies(remote);
-  const localById = Object.fromEntries(normalizeGameZombies(local).map((zombie) => [zombie.id, zombie]));
+function mergeGameZombies(remote = [], local = [], zombieDeaths = {}) {
+  const remoteZombies = applyGameZombieDeaths(remote, zombieDeaths);
+  const localById = Object.fromEntries(applyGameZombieDeaths(local, zombieDeaths).map((zombie) => [zombie.id, zombie]));
   return remoteZombies.map((remoteZombie) => {
     const localZombie = localById[remoteZombie.id];
     if (!localZombie) return remoteZombie;
