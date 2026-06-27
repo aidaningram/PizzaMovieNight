@@ -42,6 +42,7 @@ const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
 const GAME_PIZZA_SPEED = 520;
 const GAME_PIZZA_LIFE_MS = 1300;
+const GAME_PIZZA_BOUNDS_PADDING = 80;
 const GAME_RESPAWN_MS = 2600;
 const GAME_TOMATO_SIZE = 26;
 const GAME_TOMATO_SPEED = 95;
@@ -103,6 +104,7 @@ let gameAnimationId = null;
 let gameRemoteProjectiles = {};
 let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
+let gameRemovedProjectileIds = new Set();
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -1035,6 +1037,7 @@ function updateLocalGame(dt, now) {
   }
 
   player.lastSeen = now;
+  const projectileCountBefore = Object.keys(gameState.projectiles || {}).length;
   const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
@@ -1059,7 +1062,7 @@ function updateLocalGame(dt, now) {
   if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
     gameLastHeartbeat = now;
     syncLocalGame(now);
-  } else if (Object.keys(hits).length !== hitCountBefore) {
+  } else if (Object.keys(hits).length !== hitCountBefore || Object.keys(projectiles).length !== projectileCountBefore) {
     writeGameArenaSharedState(gameState);
   }
 }
@@ -1152,6 +1155,7 @@ function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLo
           createdAt: now
         };
         recordGameKill(leaderboard, nextKillLog, shot.ownerUid, player.uid, players);
+        gameRemovedProjectileIds.add(shot.id);
         delete projectiles[shot.id];
       }
     });
@@ -1266,10 +1270,21 @@ function pruneGamePlayers(players) {
 function pruneGameProjectiles(projectiles, now) {
   const next = {};
   Object.values(projectiles || {}).forEach((shot) => {
-    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS) return;
+    if (gameRemovedProjectileIds.has(shot.id)) return;
+    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS || !gameProjectileInBounds(shot)) {
+      gameRemovedProjectileIds.add(shot.id);
+      return;
+    }
     next[shot.id] = { ...shot };
   });
   return next;
+}
+
+function gameProjectileInBounds(shot) {
+  return shot.x >= -GAME_PIZZA_BOUNDS_PADDING
+    && shot.x <= GAME_ARENA.width + GAME_PIZZA_BOUNDS_PADDING
+    && shot.y >= -GAME_PIZZA_BOUNDS_PADDING
+    && shot.y <= GAME_ARENA.height + GAME_PIZZA_BOUNDS_PADDING;
 }
 
 function moveGameProjectiles(projectiles, dt, now = Date.now()) {
@@ -1285,8 +1300,12 @@ function moveGameProjectiles(projectiles, dt, now = Date.now()) {
 }
 
 function mergeGameProjectiles(remote = {}, local = {}) {
-  const merged = { ...remote };
+  const merged = {};
+  Object.entries(remote || {}).forEach(([id, shot]) => {
+    if (!gameRemovedProjectileIds.has(id)) merged[id] = shot;
+  });
   Object.entries(local || {}).forEach(([id, shot]) => {
+    if (gameRemovedProjectileIds.has(id)) return;
     const existing = merged[id];
     if (!existing || (shot.updatedAt || shot.createdAt || 0) >= (existing.updatedAt || existing.createdAt || 0)) {
       merged[id] = shot;
@@ -1636,6 +1655,7 @@ function cleanupGame() {
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   gameConsumedHitIds = new Set();
+  gameRemovedProjectileIds = new Set();
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
 }
