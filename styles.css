@@ -926,7 +926,7 @@ label {
   height: 100dvh;
   min-height: 100dvh;
   width: min(100%, 980px);
-  padding: max(22px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
+  padding: max(10px, calc(env(safe-area-inset-top) - 6px)) 18px max(24px, env(safe-area-inset-bottom));
   gap: 10px;
   grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
@@ -1171,7 +1171,7 @@ label {
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .game-page {
-    padding: max(22px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+    padding: max(8px, calc(env(safe-area-inset-top) - 6px)) 0 max(8px, env(safe-area-inset-bottom));
     overscroll-behavior: none;
     touch-action: none;
   }
