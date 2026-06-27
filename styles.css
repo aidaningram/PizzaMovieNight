@@ -923,25 +923,39 @@ label {
 }
 
 .game-page {
+  --game-header-top: max(8px, env(safe-area-inset-top));
+  --game-header-height: 56px;
   height: 100dvh;
   min-height: 100dvh;
   width: min(100%, 980px);
-  padding: max(10px, calc(env(safe-area-inset-top) - 6px)) 18px max(24px, env(safe-area-inset-bottom));
+  padding: calc(var(--game-header-top) + var(--game-header-height) + 8px) 18px max(24px, env(safe-area-inset-bottom));
   gap: 10px;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   align-content: stretch;
   overflow: hidden;
 }
 
 .game-page .page-header {
-  position: sticky;
-  top: max(10px, env(safe-area-inset-top));
+  position: fixed;
+  top: var(--game-header-top);
+  left: 50%;
+  z-index: 40;
   width: min(100%, 720px);
+  padding-right: 18px;
+  padding-left: 18px;
   margin-right: auto;
   margin-left: auto;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.game-page .home-logo-button,
+.game-page .menu-slot {
+  pointer-events: auto;
 }
 
 .pizza-game-shell {
+  grid-row: 1;
   min-height: 0;
   height: 100%;
   display: grid;
@@ -1171,7 +1185,8 @@ label {
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .game-page {
-    padding: max(8px, calc(env(safe-area-inset-top) - 6px)) 0 max(8px, env(safe-area-inset-bottom));
+    --game-header-height: 60px;
+    padding: calc(var(--game-header-top) + var(--game-header-height) + 6px) 0 max(8px, env(safe-area-inset-bottom));
     overscroll-behavior: none;
     touch-action: none;
   }
@@ -1185,6 +1200,8 @@ label {
 
   .game-page .page-header {
     width: calc(100% - 36px);
+    padding-right: 0;
+    padding-left: 0;
     margin-right: auto;
     margin-left: auto;
   }
