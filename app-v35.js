@@ -1435,9 +1435,9 @@ function drawGamePlayer(ctx, player) {
   ctx.strokeStyle = "#111019";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(radius - 5, 0);
-  ctx.lineTo(radius - 24, -10);
-  ctx.lineTo(radius - 24, 10);
+  ctx.moveTo(radius + 18, 0);
+  ctx.lineTo(radius + 2, -10);
+  ctx.lineTo(radius + 2, 10);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
