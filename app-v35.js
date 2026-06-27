@@ -145,6 +145,7 @@ let gameSpectating = false;
 let gameLobbyPresenceTimer = null;
 let gameZombieImage = null;
 let gameDisconnectCleanupReady = false;
+let gameMatchExitPending = false;
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -923,6 +924,7 @@ function renderGamePage() {
   gameViewMode = "menu";
   gameMatchQueued = false;
   gameSpectating = false;
+  gameMatchExitPending = false;
   updateGameModePanels();
   if (FIREBASE_READY && services?.rtdb) {
     setupGameDisconnectCleanup();
@@ -991,11 +993,13 @@ function enterGameSpectate() {
 }
 
 function returnGameMenu() {
+  const wasInActiveMatch = gameMatchParticipant(normalizeGame(familyData?.gameArena || gameState).match, currentUser?.uid);
+  if (wasInActiveMatch) gameMatchExitPending = true;
   markCurrentGameMatchExitLocally();
   gameViewMode = "menu";
   gameSpectating = false;
   clearGameQueue();
-  leaveGamePlayer();
+  leaveGamePlayerWithOptions({ forceMatchExit: wasInActiveMatch });
   gameLocalPlayer = null;
   gameJoinedArena = false;
   updateGameModePanels();
@@ -1027,11 +1031,11 @@ async function leaveGamePlayer() {
   return leaveGamePlayerWithOptions();
 }
 
-async function leaveGamePlayerWithOptions({ offline = false } = {}) {
+async function leaveGamePlayerWithOptions({ offline = false, forceMatchExit = false } = {}) {
   if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
   const arena = normalizeGame(familyData?.gameArena || gameState);
   const match = arena.match;
-  const leavingActiveMatch = gameMatchInProgress(match) && gameMatchParticipant(match, currentUser.uid);
+  const leavingActiveMatch = gameMatchInProgress(match) && (forceMatchExit || gameMatchParticipant(match, currentUser.uid));
   const patch = {
     [`players/${currentUser.uid}`]: null,
     [`match/queued/${currentUser.uid}`]: null,
@@ -1367,6 +1371,7 @@ function receiveGameSnapshot() {
   if (!document.querySelector("#game-canvas")) return;
   const remoteGame = normalizeGame(familyData?.gameArena);
   syncGameViewWithMatch(remoteGame);
+  if (gameMatchExitPending && gameViewMode === "menu") return;
   const zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.zombieDeaths, gameState?.zombieDeaths), Date.now());
   const ownPlayer = gameLocalPlayer || remoteGame.players[currentUser?.uid];
   const players = {
@@ -1389,6 +1394,13 @@ function receiveGameSnapshot() {
 
 function syncGameViewWithMatch(remoteGame) {
   const match = remoteGame.match;
+  if (gameMatchExitPending) {
+    if (!gameMatchInProgress(match) || match.removed?.[currentUser?.uid] || !gameMatchParticipant(match, currentUser?.uid)) {
+      gameMatchExitPending = false;
+    } else if (gameViewMode === "menu") {
+      return;
+    }
+  }
   if (gameMatchInProgress(match) && match.removed?.[currentUser?.uid]) {
     if (gameViewMode === "menu") return;
     gameViewMode = "spectate";
@@ -3374,6 +3386,7 @@ function cleanupGame() {
   gameRemovedProjectileIds = new Set();
   gameConsumedPickupIds = new Set();
   gameJoinedArena = false;
+  gameMatchExitPending = false;
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
 }
