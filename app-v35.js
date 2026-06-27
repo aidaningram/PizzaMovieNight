@@ -1211,8 +1211,9 @@ async function syncLocalGame(now) {
 }
 
 async function writeGameArena(nextArena) {
-  const existingPlayers = familyData?.gameArena?.players || {};
-  const existingZombies = familyData?.gameArena?.zombies;
+  const existingArena = familyData?.gameArena || {};
+  const existingPlayers = existingArena.players || {};
+  const existingZombies = existingArena.zombies;
   familyData = { ...familyData, gameArena: nextArena };
   if (!FIREBASE_READY) {
     localStorage.setItem(demoStore.key, JSON.stringify(familyData));
@@ -1229,10 +1230,12 @@ async function writeGameArena(nextArena) {
     if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
   });
   if (isHost || !existingZombies) {
+    const mergedZombieDeaths = mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths);
+    const mergedCollectedPickups = mergeGameTimedMaps(existingArena.collectedPickups, nextArena.collectedPickups);
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
-    patch.zombieDeaths = Object.keys(nextArena.zombieDeaths || {}).length ? nextArena.zombieDeaths : null;
-    patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, nextArena.collectedPickups || {});
-    patch.collectedPickups = Object.keys(nextArena.collectedPickups || {}).length ? nextArena.collectedPickups : null;
+    if (Object.keys(mergedZombieDeaths || {}).length) patch.zombieDeaths = mergedZombieDeaths;
+    patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {});
+    if (Object.keys(mergedCollectedPickups || {}).length) patch.collectedPickups = mergedCollectedPickups;
     patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
   }
 
@@ -1247,19 +1250,21 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     await writeGameArena(nextArena);
     return;
   }
+  const mergedCollectedPickups = mergeGameTimedMaps(familyData?.gameArena?.collectedPickups, nextArena.collectedPickups);
+  const mergedZombieDeaths = mergeGameTimedMaps(familyData?.gameArena?.zombieDeaths, nextArena.zombieDeaths);
   const patch = {
     version: GAME_VERSION,
     walls: GAME_WALLS,
     projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
-    pepperoniPickups: gamePickupPatchValue(nextArena.pepperoniPickups || {}, nextArena.collectedPickups || {}),
-    collectedPickups: Object.keys(nextArena.collectedPickups || {}).length ? nextArena.collectedPickups : null,
-    zombieDeaths: Object.keys(nextArena.zombieDeaths || {}).length ? nextArena.zombieDeaths : null,
+    pepperoniPickups: gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {}),
     lastPepperoniSpawnAt: Number(nextArena.lastPepperoniSpawnAt || 0),
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
     updatedAt: Date.now()
   };
+  if (Object.keys(mergedCollectedPickups || {}).length) patch.collectedPickups = mergedCollectedPickups;
+  if (Object.keys(mergedZombieDeaths || {}).length) patch.zombieDeaths = mergedZombieDeaths;
   if (options.includeZombies) {
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
   }
