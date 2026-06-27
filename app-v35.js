@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 5;
+const GAME_VERSION = 6;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -55,21 +55,16 @@ const GAME_WALLS = [
   { x: 0, y: 1096, w: 960, h: 24 },
   { x: 0, y: 0, w: 24, h: 1120 },
   { x: 936, y: 0, w: 24, h: 1120 },
-  { x: 120, y: 120, w: 260, h: 28 },
-  { x: 580, y: 120, w: 260, h: 28 },
-  { x: 270, y: 260, w: 28, h: 210 },
-  { x: 365, y: 315, w: 230, h: 28 },
-  { x: 662, y: 260, w: 28, h: 210 },
-  { x: 120, y: 525, w: 265, h: 28 },
-  { x: 466, y: 435, w: 28, h: 205 },
-  { x: 575, y: 525, w: 265, h: 28 },
-  { x: 145, y: 705, w: 275, h: 28 },
-  { x: 540, y: 705, w: 275, h: 28 },
-  { x: 245, y: 820, w: 28, h: 165 },
-  { x: 365, y: 870, w: 230, h: 28 },
-  { x: 690, y: 820, w: 28, h: 165 },
-  { x: 120, y: 1010, w: 300, h: 28 },
-  { x: 540, y: 1010, w: 300, h: 28 }
+  { x: 150, y: 145, w: 250, h: 28 },
+  { x: 560, y: 145, w: 250, h: 28 },
+  { x: 250, y: 325, w: 28, h: 170 },
+  { x: 682, y: 325, w: 28, h: 170 },
+  { x: 150, y: 600, w: 250, h: 28 },
+  { x: 560, y: 600, w: 250, h: 28 },
+  { x: 250, y: 775, w: 28, h: 170 },
+  { x: 682, y: 775, w: 28, h: 170 },
+  { x: 120, y: 995, w: 110, h: 28 },
+  { x: 730, y: 995, w: 110, h: 28 }
 ];
 const GAME_TOMATO_STARTS = [
   { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
