@@ -991,12 +991,41 @@ function returnGameMenu() {
 
 async function leaveGamePlayer() {
   if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
-  await services.rtdbFns.update(gameArenaRef(), {
+  const arena = normalizeGame(familyData?.gameArena || gameState);
+  const match = arena.match;
+  const leavingActiveMatch = gameMatchInProgress(match) && gameMatchParticipant(match, currentUser.uid);
+  const patch = {
     [`players/${currentUser.uid}`]: null,
     [`match/queued/${currentUser.uid}`]: null,
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
     updatedAt: Date.now()
-  }).catch(() => {});
+  };
+  if (leavingActiveMatch) {
+    patch[`match/participants/${currentUser.uid}`] = null;
+    patch[`match/scores/${currentUser.uid}`] = null;
+    patch[`match/finalScores/${currentUser.uid}`] = null;
+    patch[`match/removed/${currentUser.uid}`] = true;
+  }
+  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {});
+  if (leavingActiveMatch) {
+    const nextMatch = {
+      ...(match || {}),
+      participants: { ...(match.participants || {}) },
+      scores: { ...(match.scores || {}) },
+      finalScores: { ...(match.finalScores || {}) },
+      removed: { ...(match.removed || {}), [currentUser.uid]: true }
+    };
+    delete nextMatch.participants[currentUser.uid];
+    delete nextMatch.scores[currentUser.uid];
+    delete nextMatch.finalScores[currentUser.uid];
+    familyData = {
+      ...familyData,
+      gameArena: {
+        ...(familyData?.gameArena || {}),
+        match: nextMatch
+      }
+    };
+  }
 }
 
 function clearGameQueue() {
@@ -1067,10 +1096,11 @@ function updateGameModePanels() {
   const canQueue = active.length > 1 && !inProgress && match.status !== "ended";
 
   const showPlay = gameViewMode !== "menu" || (inProgress && isParticipant);
+  document.body.classList.toggle("game-playing", showPlay);
   if (menuPanel) menuPanel.hidden = showPlay;
   if (playPanel) playPanel.hidden = !showPlay;
-  if (liveLeaderboard) liveLeaderboard.hidden = !(match.status === "active" || match.status === "ended");
-  if (backButton) backButton.hidden = gameViewMode === "match" && match.status === "active";
+  if (liveLeaderboard) liveLeaderboard.hidden = !showPlay;
+  if (backButton) backButton.hidden = !showPlay;
   if (shootButton) shootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
   if (mobileShootButton) mobileShootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
   if (endPanel) endPanel.hidden = !gameMatchEnded(match);
@@ -1273,6 +1303,14 @@ function receiveGameSnapshot() {
 
 function syncGameViewWithMatch(remoteGame) {
   const match = remoteGame.match;
+  if (gameMatchInProgress(match) && match.removed?.[currentUser?.uid]) {
+    gameViewMode = "spectate";
+    gameSpectating = true;
+    gameLocalPlayer = null;
+    gameJoinedArena = false;
+    startGameLoop();
+    return;
+  }
   if (gameMatchInProgress(match) && gameMatchParticipant(match, currentUser?.uid)) {
     gameViewMode = "match";
     gameJoinedArena = true;
@@ -1288,7 +1326,7 @@ function gameMatchInProgress(match = {}) {
 }
 
 function gameMatchParticipant(match = {}, uid = currentUser?.uid) {
-  return Boolean(uid && match?.participants?.[uid]);
+  return Boolean(uid && !match?.removed?.[uid] && match?.participants?.[uid]);
 }
 
 function gameMatchEnded(match = {}) {
@@ -1324,6 +1362,7 @@ function defaultGameMatchState() {
     status: "idle",
     queued: {},
     participants: {},
+    removed: {},
     scores: {},
     startedAt: 0,
     endsAt: 0,
@@ -1362,6 +1401,7 @@ function normalizeGameMatch(match = {}) {
     ...(match || {}),
     queued: match?.queued || {},
     participants: match?.participants || {},
+    removed: match?.removed || {},
     scores: match?.scores || {},
     finalScores: match?.finalScores || {}
   };
@@ -1376,16 +1416,26 @@ function mergeGameMatch(remoteMatch = {}, localMatch = {}) {
       ? "active"
       : "idle";
   const participants = { ...remote.participants, ...local.participants };
+  const removed = { ...remote.removed, ...local.removed };
+  Object.keys(removed).forEach((uid) => {
+    delete participants[uid];
+  });
   const queued = status === "active" ? {} : { ...remote.queued, ...local.queued };
   const scores = mergeGameScoreMaps(remote.scores, local.scores, participants);
+  const finalScores = mergeGameScoreMaps(remote.finalScores, local.finalScores, participants);
+  Object.keys(removed).forEach((uid) => {
+    delete scores[uid];
+    delete finalScores[uid];
+  });
   return {
     ...remote,
     ...local,
     status,
     queued,
     participants,
+    removed,
     scores,
-    finalScores: mergeGameScoreMaps(remote.finalScores, local.finalScores, participants),
+    finalScores,
     startedAt: Number(remote.startedAt || local.startedAt || 0),
     endsAt: Number(remote.endsAt || local.endsAt || 0),
     matchId: remote.matchId || local.matchId || ""
@@ -2607,10 +2657,10 @@ function renderMatchLeaderboard() {
   const match = arena.match;
   const liveList = document.querySelector("#match-leaderboard");
   const finalList = document.querySelector("#final-match-leaderboard");
-  const rows = gameMatchRows(match);
+  const rows = match.status === "active" || match.status === "ended" ? gameMatchRows(match) : [];
   [liveList, finalList].forEach((list) => {
     if (!list) return;
-    const listRows = rows.length ? rows : [{ uid: "empty", name: "No scores yet", xp: 0 }];
+    const listRows = rows.length || match.status === "idle" ? rows : [{ uid: "empty", name: "No scores yet", xp: 0 }];
     updateMatchListRows(list, listRows);
   });
 }
@@ -3209,6 +3259,7 @@ function cleanupGame() {
   }
   document.documentElement.classList.remove("game-active-root");
   document.body.classList.remove("game-active");
+  document.body.classList.remove("game-playing");
   if (gameTouchMoveLocked) {
     document.removeEventListener("touchmove", preventGamePageDrag);
     gameTouchMoveLocked = false;
