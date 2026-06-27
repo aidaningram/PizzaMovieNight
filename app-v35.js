@@ -47,7 +47,7 @@ const GAME_TOMATO_SIZE = 26;
 const GAME_TOMATO_SPEED = 95;
 const GAME_TOMATO_TURN_MIN_MS = 550;
 const GAME_TOMATO_TURN_MAX_MS = 1700;
-const GAME_HEARTBEAT_MS = 650;
+const GAME_HEARTBEAT_MS = 90;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_WALLS = [
   { x: 0, y: 0, w: 960, h: 24 },
@@ -101,7 +101,6 @@ let gameLastHeartbeat = 0;
 let gameLastShotAt = 0;
 let gameAnimationId = null;
 let gameRemoteProjectiles = {};
-let gamePlayerViews = {};
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -908,7 +907,6 @@ function receiveGameSnapshot() {
     ...remoteGame.players,
     ...(ownPlayer ? { [currentUser.uid]: ownPlayer } : {})
   };
-  pruneGamePlayerViews(players);
   gameRemoteProjectiles = remoteGame.projectiles;
   const localTomatoes = gameState?.version === GAME_VERSION && gameState?.tomatoes?.length ? gameState.tomatoes : null;
   gameState = {
@@ -959,8 +957,6 @@ function createGamePlayer() {
     y: spawn.y,
     aimX: 1,
     aimY: 0,
-    velocityX: 0,
-    velocityY: 0,
     alive: true,
     deadUntil: 0,
     lastSeen: Date.now()
@@ -997,18 +993,10 @@ function updateLocalGame(dt, now) {
       gameAim = vector;
       player.aimX = vector.x;
       player.aimY = vector.y;
-      player.velocityX = vector.x * GAME_PLAYER_SPEED;
-      player.velocityY = vector.y * GAME_PLAYER_SPEED;
       const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * GAME_PLAYER_SPEED * dt, vector.y * GAME_PLAYER_SPEED * dt);
       player.x = next.x;
       player.y = next.y;
-    } else {
-      player.velocityX = 0;
-      player.velocityY = 0;
     }
-  } else {
-    player.velocityX = 0;
-    player.velocityY = 0;
   }
 
   player.lastSeen = now;
@@ -1067,23 +1055,39 @@ async function writeGameArena(nextArena) {
     localStorage.setItem(demoStore.key, JSON.stringify(familyData));
     return;
   }
+  const player = nextArena.players?.[currentUser.uid] || null;
+  const isHost = currentUser.uid === gameHostUid(nextArena.players || {});
   const patch = {
+    version: GAME_VERSION,
+    updatedAt: Date.now(),
+    [`players/${currentUser.uid}`]: player
+  };
+  Object.keys(existingPlayers).forEach((uid) => {
+    if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
+  });
+  if (isHost || !existingTomatoes) {
+    patch.tomatoes = nextArena.tomatoes || GAME_TOMATO_STARTS;
+  }
+
+  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {
+    setGameStatus("Error", false);
+    showGameArenaStatus("Realtime Database could not save the game.");
+  });
+}
+
+async function writeGameArenaSharedState(nextArena) {
+  if (!FIREBASE_READY) {
+    await writeGameArena(nextArena);
+    return;
+  }
+  await services.rtdbFns.update(gameArenaRef(), {
     version: GAME_VERSION,
     walls: GAME_WALLS,
     projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
     killLog: nextArena.killLog || [],
-    updatedAt: Date.now(),
-    [`players/${currentUser.uid}`]: nextArena.players?.[currentUser.uid] || null
-  };
-  Object.keys(existingPlayers).forEach((uid) => {
-    if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
-  });
-  if (currentUser.uid === gameHostUid(nextArena.players || {}) || !existingTomatoes) {
-    patch.tomatoes = nextArena.tomatoes || GAME_TOMATO_STARTS;
-  }
-
-  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {
+    updatedAt: Date.now()
+  }).catch(() => {
     setGameStatus("Error", false);
     showGameArenaStatus("Realtime Database could not save the game.");
   });
@@ -1264,7 +1268,7 @@ function shootGamePizza() {
     ...gameRemoteProjectiles,
     [shotId]: shot
   };
-  syncLocalGame(now);
+  writeGameArenaSharedState(gameState);
 }
 
 function drawGame() {
@@ -1281,7 +1285,7 @@ function drawGame() {
   gameState.walls.forEach((wall) => drawGameWall(ctx, wall));
   gameState.tomatoes.forEach((tomato) => drawGameTomato(ctx, tomato));
   Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
-  Object.values(gameState.players).forEach((player) => drawGamePlayer(ctx, displayGamePlayer(player)));
+  Object.values(gameState.players).forEach((player) => drawGamePlayer(ctx, player));
 
   if (gameLocalPlayer && !gameLocalPlayer.alive) {
     showGameArenaStatus("Respawning...");
@@ -1302,29 +1306,6 @@ function renderGameLeaderboard() {
     item.innerHTML = `<strong>${escapeHtml(row.name || "Player")}</strong> - ${Number(row.kills || 0)} kill${Number(row.kills || 0) === 1 ? "" : "s"}`;
     return item;
   }));
-}
-
-function displayGamePlayer(player) {
-  if (!player || player.uid === currentUser?.uid) return player;
-  const existing = gamePlayerViews[player.uid] || { x: player.x, y: player.y };
-  const ageSeconds = Math.min(0.45, Math.max(0, (Date.now() - (player.lastSeen || Date.now())) / 1000));
-  const targetX = player.alive ? player.x + Number(player.velocityX || 0) * ageSeconds : player.x;
-  const targetY = player.alive ? player.y + Number(player.velocityY || 0) * ageSeconds : player.y;
-  const distanceToTarget = gameDistance(existing.x, existing.y, targetX, targetY);
-  const amount = distanceToTarget > 240 ? 1 : 0.14;
-  const next = {
-    ...player,
-    x: existing.x + (targetX - existing.x) * amount,
-    y: existing.y + (targetY - existing.y) * amount
-  };
-  gamePlayerViews[player.uid] = { x: next.x, y: next.y };
-  return next;
-}
-
-function pruneGamePlayerViews(players = {}) {
-  Object.keys(gamePlayerViews).forEach((uid) => {
-    if (!players[uid]) delete gamePlayerViews[uid];
-  });
 }
 
 function drawGameGrid(ctx) {
@@ -1573,7 +1554,6 @@ function cleanupGame() {
   gameState = null;
   gameLocalPlayer = null;
   gameRemoteProjectiles = {};
-  gamePlayerViews = {};
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   window.removeEventListener("keydown", handleGameKeyDown);
