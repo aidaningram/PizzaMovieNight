@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 8;
+const GAME_VERSION = 9;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -74,7 +74,7 @@ const GAME_TOMATO_STARTS = [
   { id: "tomato-3", x: 120, y: 680, vx: 0.75, vy: -0.8 },
   { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 },
   { id: "tomato-5", x: 470, y: 116, vx: 0.35, vy: 1 },
-  { id: "tomato-6", x: 470, y: 920, vx: -0.45, vy: -1 },
+  { id: "tomato-6", x: 470, y: 865, vx: -0.45, vy: -1 },
   { id: "tomato-7", x: 850, y: 900, vx: -1, vy: 0.2 }
 ];
 
