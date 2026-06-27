@@ -64,6 +64,7 @@ const GAME_SPECIAL_TOPPING_DURATION_MS = 10000;
 const GAME_MUSHROOM_FUSE_MS = 700;
 const GAME_MUSHROOM_SPLASH_RADIUS = 92;
 const GAME_BASIL_FIRE_MS = 90;
+const GAME_BASIL_LIFE_MS = 620;
 const GAME_MEATBALL_SIZE = 84;
 const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
@@ -1391,6 +1392,7 @@ function randomGamePepperoniSpawn(existingPickups = {}) {
 
 function collectGameToppings(player, pickups, now = Date.now()) {
   if (!player?.alive) return;
+  normalizeGamePlayerPowerup(player, now);
   Object.values(pickups || {}).forEach((pickup) => {
     if (gameDistance(player.x, player.y, pickup.x, pickup.y) <= GAME_PLAYER_SIZE / 2 + GAME_PEPPERONI_PICKUP_SIZE / 2) {
       const type = pickup.type || "pepperoni";
@@ -1398,7 +1400,7 @@ function collectGameToppings(player, pickups, now = Date.now()) {
         if (!canCollectAmmoTopping(player)) return;
         player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0) + 1);
       } else {
-        applyGamePowerup(player, type, now);
+        if (!applyGamePowerup(player, type, now)) return;
       }
       delete pickups[pickup.id];
     }
@@ -1412,18 +1414,20 @@ function canCollectAmmoTopping(player) {
 
 function applyGamePowerup(player, type, now = Date.now()) {
   normalizeGamePlayerPowerup(player, now);
+  if (player.powerup) return false;
   const currentAmmo = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
   player.powerup = type;
   player.powerupUntil = now + GAME_SPECIAL_TOPPING_DURATION_MS;
   if (type === "mushroom") {
     player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, currentAmmo + 1);
     player.savedPepperoniCount = 0;
-    return;
+    return true;
   }
   player.savedPepperoniCount = currentAmmo;
   if (type === "meatball" || type === "basil") {
     player.pepperoniCount = currentAmmo;
   }
+  return true;
 }
 
 function normalizeGamePlayerPowerup(player, now = Date.now()) {
@@ -1639,7 +1643,8 @@ function pruneGameProjectiles(projectiles, now) {
     if (gameRemovedProjectileIds.has(shot.id)) return;
     const shotType = shot.type || "pepperoni";
     const mushroomWaitingToBurst = shotType === "mushroom" && (gameProjectileHitsWall(shot) || now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS);
-    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS || !gameProjectileInBounds(shot) || (shotType !== "mushroom" && gameProjectileHitsWall(shot))) {
+    const shotLife = Number(shot.lifeMs || GAME_PIZZA_LIFE_MS);
+    if (now - shot.createdAt > shotLife || !gameProjectileInBounds(shot) || (shotType !== "mushroom" && gameProjectileHitsWall(shot))) {
       gameRemovedProjectileIds.add(shot.id);
       return;
     }
@@ -1711,6 +1716,7 @@ function shootGamePizza() {
     vx: (gameAim.x / mag) * GAME_PIZZA_SPEED,
     vy: (gameAim.y / mag) * GAME_PIZZA_SPEED,
     type: shotType,
+    lifeMs: shotType === "basil" ? GAME_BASIL_LIFE_MS : GAME_PIZZA_LIFE_MS,
     createdAt: now,
     updatedAt: now
   };
