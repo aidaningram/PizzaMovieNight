@@ -66,6 +66,15 @@ const GAME_SPECIAL_TOPPING_DURATION_MS = 10000;
 const GAME_POWERUP_FLASH_MS = 2600;
 const GAME_RESPAWN_SHIELD_MS = 4000;
 const GAME_SHIELD_FLASH_MS = 1500;
+const GAME_MATCH_DURATION_MS = 120000;
+const GAME_MATCH_COUNTDOWN_MS = 3500;
+const GAME_LOBBY_STALE_MS = 8000;
+const GAME_XP = {
+  pepperoni: 100,
+  special: 300,
+  zombie: 300,
+  player: 1000
+};
 const GAME_MUSHROOM_FUSE_MS = 700;
 const GAME_MUSHROOM_SPLASH_RADIUS = 184;
 const GAME_MUSHROOM_EXPLOSION_MS = 360;
@@ -130,6 +139,10 @@ let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
 let gameConsumedPickupIds = new Set();
 let gameJoinedArena = false;
+let gameViewMode = "menu";
+let gameMatchQueued = false;
+let gameSpectating = false;
+let gameLobbyPresenceTimer = null;
 let gameZombieImage = null;
 
 const demoStore = {
@@ -896,18 +909,20 @@ function renderGamePage() {
   renderAppMenu();
   gameState = normalizeGame(familyData?.gameArena);
   gameRemoteProjectiles = gameState.projectiles;
+  attachGameMenuControls();
   attachGameControls();
-  setGameStatus("Joining", false);
+  setGameStatus("Menu", false);
   gameJoinedArena = false;
+  gameViewMode = "menu";
+  gameMatchQueued = false;
+  gameSpectating = false;
+  updateGameModePanels();
   if (FIREBASE_READY && services?.rtdb) {
     subscribeGameArena();
   } else {
-    joinGameArena();
+    writeGameLobbyPresence("menu");
   }
-  if (!gameAnimationId) {
-    gameLastFrame = performance.now();
-    gameAnimationId = requestAnimationFrame(gameTick);
-  }
+  startGameLobbyPresenceTimer();
 }
 
 function subscribeGameArena() {
@@ -918,25 +933,145 @@ function subscribeGameArena() {
     const nextArena = snap.val();
     familyData = { ...familyData, gameArena: nextArena };
     if (nextArena) receiveGameSnapshot();
-    if (!gameJoinedArena) joinGameArena();
+    if (!gameJoinedArena) writeGameLobbyPresence(gameViewMode);
+    updateGameModePanels();
+    maybeStartQueuedMatch();
   }, () => {
     setGameStatus("Error", false);
     showGameArenaStatus("Realtime Database blocked the game. Check Realtime Database rules.");
   });
 }
 
-function joinGameArena() {
+function attachGameMenuControls() {
+  document.querySelector("#free-play-button")?.addEventListener("click", () => enterGameFreePlay());
+  document.querySelector("#start-match-button")?.addEventListener("click", () => queueGameMatch());
+  document.querySelector("#spectate-button")?.addEventListener("click", () => enterGameSpectate());
+  document.querySelector("#queue-match-button")?.addEventListener("click", () => queueGameMatch());
+  document.querySelector("#return-game-menu-button")?.addEventListener("click", () => returnGameMenu());
+  document.querySelector("#end-free-play-button")?.addEventListener("click", () => enterGameFreePlay());
+}
+
+function enterGameFreePlay() {
+  const match = normalizeGame(familyData?.gameArena).match;
+  if (gameMatchInProgress(match) && !gameMatchParticipant(match, currentUser?.uid)) return;
+  if (gameMatchEnded(match)) {
+    const fresh = { ...defaultGameState(), lobby: normalizeGame(familyData?.gameArena).lobby };
+    gameState = fresh;
+    writeFullGameArena(fresh);
+  }
+  gameViewMode = "free";
+  gameSpectating = false;
+  gameMatchQueued = false;
+  updateGameModePanels();
+  joinGameArena("free");
+  startGameLoop();
+}
+
+function enterGameSpectate() {
+  gameViewMode = "spectate";
+  gameSpectating = true;
+  gameMatchQueued = false;
+  leaveGamePlayer();
+  updateGameModePanels();
+  writeGameLobbyPresence("spectate");
+  startGameLoop();
+}
+
+function returnGameMenu() {
+  gameViewMode = "menu";
+  gameSpectating = false;
+  gameMatchQueued = false;
+  leaveGamePlayer();
+  gameLocalPlayer = null;
+  gameJoinedArena = false;
+  updateGameModePanels();
+  writeGameLobbyPresence("menu");
+}
+
+async function leaveGamePlayer() {
+  if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
+  await services.rtdbFns.update(gameArenaRef(), {
+    [`players/${currentUser.uid}`]: null,
+    [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
+    updatedAt: Date.now()
+  }).catch(() => {});
+}
+
+function startGameLoop() {
+  if (!gameAnimationId) {
+    gameLastFrame = performance.now();
+    gameAnimationId = requestAnimationFrame(gameTick);
+  }
+}
+
+function startGameLobbyPresenceTimer() {
+  if (gameLobbyPresenceTimer) window.clearInterval(gameLobbyPresenceTimer);
+  gameLobbyPresenceTimer = window.setInterval(() => {
+    if (routeName() === "game") writeGameLobbyPresence(gameViewMode);
+  }, 3000);
+}
+
+function updateGameModePanels() {
+  const arena = normalizeGame(familyData?.gameArena || gameState);
+  const match = arena.match;
+  const inProgress = gameMatchInProgress(match);
+  const isParticipant = gameMatchParticipant(match, currentUser?.uid);
+  const menuPanel = document.querySelector("#game-menu-panel");
+  const playPanel = document.querySelector("#game-play-panel");
+  const freeButton = document.querySelector("#free-play-button");
+  const startButton = document.querySelector("#start-match-button");
+  const spectateButton = document.querySelector("#spectate-button");
+  const queueButton = document.querySelector("#queue-match-button");
+  const shootButton = document.querySelector("#shoot-button");
+  const mobileShootButton = document.querySelector("#mobile-shoot-button");
+  const note = document.querySelector("#match-queue-note");
+  const liveLeaderboard = document.querySelector("#match-leaderboard");
+  const endPanel = document.querySelector("#match-end-panel");
+
+  const showPlay = gameViewMode !== "menu" || (inProgress && isParticipant);
+  if (menuPanel) menuPanel.hidden = showPlay;
+  if (playPanel) playPanel.hidden = !showPlay;
+  if (liveLeaderboard) liveLeaderboard.hidden = !(match.status === "active" || match.status === "ended");
+  if (queueButton) queueButton.hidden = gameViewMode === "spectate" || match.status === "active" || match.status === "ended";
+  if (shootButton) shootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
+  if (mobileShootButton) mobileShootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
+  if (endPanel) endPanel.hidden = !gameMatchEnded(match);
+
+  if (freeButton) freeButton.disabled = inProgress && !isParticipant;
+  if (startButton) {
+    startButton.hidden = inProgress && !isParticipant;
+    startButton.textContent = gameMatchQueued || match.queued?.[currentUser?.uid] ? "Queued" : "Start Match";
+  }
+  if (spectateButton) spectateButton.hidden = !(inProgress && !isParticipant);
+
+  if (note) {
+    const active = gameActiveContestants(arena);
+    const queuedCount = active.filter((entry) => match.queued?.[entry.uid]).length;
+    if (inProgress && !isParticipant) note.textContent = "A match is already running. You can spectate until it ends.";
+    else if (active.length <= 1) note.textContent = "A match needs at least two active players in Pizza Arena.";
+    else note.textContent = `${queuedCount} of ${active.length} active player${active.length === 1 ? "" : "s"} queued.`;
+  }
+
+  renderMatchLeaderboard();
+}
+
+function joinGameArena(mode = "free") {
   if (!currentUser?.uid) return;
   gameJoinedArena = true;
   const player = createGamePlayer();
+  player.mode = mode;
   const next = normalizeGame(familyData?.gameArena);
-  const leaderboard = ensureGameLeaderboardEntry(next.leaderboard, player);
+  const leaderboard = next.leaderboard || {};
   gameLocalPlayer = player;
   gameState = {
     ...next,
     players: {
       ...next.players,
       [currentUser.uid]: player
+    },
+    lobby: {
+      ...(next.lobby || {}),
+      [currentUser.uid]: gameLobbyEntry(mode)
     },
     leaderboard,
     updatedAt: Date.now()
@@ -945,9 +1080,126 @@ function joinGameArena() {
   setGameStatus("Online", true);
 }
 
+function gameLobbyEntry(mode = gameViewMode) {
+  return {
+    uid: currentUser.uid,
+    name: displayName(),
+    mode,
+    queued: Boolean(gameMatchQueued),
+    lastSeen: Date.now()
+  };
+}
+
+async function writeGameLobbyPresence(mode = gameViewMode) {
+  if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
+  await services.rtdbFns.update(gameArenaRef(), {
+    version: GAME_VERSION,
+    [`lobby/${currentUser.uid}`]: gameLobbyEntry(mode),
+    updatedAt: Date.now()
+  }).catch(() => {});
+}
+
+async function queueGameMatch() {
+  if (!currentUser?.uid) return;
+  const arena = normalizeGame(familyData?.gameArena);
+  const match = arena.match;
+  if (gameMatchInProgress(match) && !gameMatchParticipant(match, currentUser.uid)) return;
+  gameMatchQueued = true;
+  const queued = { ...(match.queued || {}), [currentUser.uid]: true };
+  const nextMatch = { ...match, queued };
+  gameState = { ...(gameState || arena), match: nextMatch };
+  updateGameModePanels();
+  if (FIREBASE_READY && services?.rtdb) {
+    await services.rtdbFns.update(gameArenaRef(), {
+      [`match/queued/${currentUser.uid}`]: true,
+      [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
+      updatedAt: Date.now()
+    }).catch(() => {});
+  }
+  maybeStartQueuedMatch();
+}
+
+function gameActiveContestants(arena = normalizeGame(familyData?.gameArena)) {
+  const now = Date.now();
+  const lobby = pruneGameLobby(arena.lobby || {}, now);
+  const playerEntries = Object.values(pruneGamePlayers(arena.players || {})).map((player) => ({
+    uid: player.uid,
+    name: player.name || "Player",
+    mode: player.mode || "free",
+    lastSeen: player.lastSeen || now
+  }));
+  const merged = {};
+  Object.values(lobby).forEach((entry) => {
+    if (entry.mode !== "spectate") merged[entry.uid] = entry;
+  });
+  playerEntries.forEach((entry) => {
+    if (entry.mode !== "spectate") merged[entry.uid] = entry;
+  });
+  return Object.values(merged);
+}
+
+function maybeStartQueuedMatch() {
+  const arena = normalizeGame(familyData?.gameArena);
+  const match = arena.match;
+  if (gameMatchInProgress(match)) return;
+  const contestants = gameActiveContestants(arena);
+  const queued = match.queued || {};
+  const everyoneQueued = contestants.length > 1 && contestants.every((entry) => queued[entry.uid]);
+  if (!everyoneQueued) return;
+  const starterUid = gameHostUid(Object.fromEntries(contestants.map((entry) => [entry.uid, entry])));
+  if (starterUid !== currentUser?.uid) return;
+  startGameMatch(contestants);
+}
+
+async function startGameMatch(contestants) {
+  const now = Date.now();
+  const startsAt = now + GAME_MATCH_COUNTDOWN_MS;
+  const matchId = `match-${now}`;
+  const participants = Object.fromEntries(contestants.map((entry) => [entry.uid, { uid: entry.uid, name: entry.name || "Player" }]));
+  const scores = Object.fromEntries(contestants.map((entry) => [entry.uid, { uid: entry.uid, name: entry.name || "Player", xp: 0 }]));
+  const players = Object.fromEntries(contestants.map((entry) => {
+    const savedUser = currentUser;
+    currentUser = { ...(currentUser || {}), uid: entry.uid, displayName: entry.name || "Player" };
+    const player = createGamePlayer();
+    currentUser = savedUser;
+    player.uid = entry.uid;
+    player.name = entry.name || "Player";
+    player.color = gameColorFromUid(entry.uid);
+    player.mode = "match";
+    return [entry.uid, player];
+  }));
+  const syncedMatch = mergeGameMatch(serverGame.match, nextGame.match);
+  const nextArena = {
+    ...defaultGameState(),
+    players,
+    lobby: Object.fromEntries(contestants.map((entry) => [entry.uid, { ...entry, mode: "match", queued: false, lastSeen: now }])),
+    match: {
+      status: "active",
+      queued: {},
+      participants,
+      scores,
+      startedAt: startsAt,
+      endsAt: startsAt + GAME_MATCH_DURATION_MS,
+      matchId,
+      finalScores: {}
+    },
+    updatedAt: now
+  };
+  gameState = normalizeGame(nextArena);
+  if (currentUser?.uid && players[currentUser.uid]) {
+    gameLocalPlayer = players[currentUser.uid];
+    gameViewMode = "match";
+    gameJoinedArena = true;
+  }
+  updateGameModePanels();
+  await writeFullGameArena(nextArena);
+  startGameLoop();
+}
+
 function receiveGameSnapshot() {
   if (!document.querySelector("#game-canvas")) return;
   const remoteGame = normalizeGame(familyData?.gameArena);
+  syncGameViewWithMatch(remoteGame);
   const zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.zombieDeaths, gameState?.zombieDeaths), Date.now());
   const ownPlayer = gameLocalPlayer || remoteGame.players[currentUser?.uid];
   const players = {
@@ -968,6 +1220,34 @@ function receiveGameSnapshot() {
   gameLocalPlayer = ownPlayer;
 }
 
+function syncGameViewWithMatch(remoteGame) {
+  const match = remoteGame.match;
+  if (gameMatchInProgress(match) && gameMatchParticipant(match, currentUser?.uid)) {
+    gameViewMode = "match";
+    gameJoinedArena = true;
+    gameSpectating = false;
+    startGameLoop();
+  } else if (gameViewMode === "spectate") {
+    startGameLoop();
+  }
+}
+
+function gameMatchInProgress(match = {}) {
+  return match?.status === "active" && Date.now() < Number(match.endsAt || 0);
+}
+
+function gameMatchParticipant(match = {}, uid = currentUser?.uid) {
+  return Boolean(uid && match?.participants?.[uid]);
+}
+
+function gameMatchEnded(match = {}) {
+  return match?.status === "ended";
+}
+
+function gameMatchFrozen(match = {}, now = Date.now()) {
+  return match?.status === "active" && now < Number(match.startedAt || 0);
+}
+
 function defaultGameState() {
   return {
     version: GAME_VERSION,
@@ -980,15 +1260,31 @@ function defaultGameState() {
     collectedPickups: {},
     lastPepperoniSpawnAt: Date.now() - GAME_PEPPERONI_SPAWN_MS,
     leaderboard: {},
+    match: defaultGameMatchState(),
+    lobby: {},
     hits: {},
     killLog: [],
     updatedAt: Date.now()
   };
 }
 
+function defaultGameMatchState() {
+  return {
+    status: "idle",
+    queued: {},
+    participants: {},
+    scores: {},
+    startedAt: 0,
+    endsAt: 0,
+    matchId: "",
+    finalScores: {}
+  };
+}
+
 function normalizeGame(value) {
   const fallback = defaultGameState();
   const useCurrentMap = value?.version === GAME_VERSION;
+  const match = normalizeGameMatch(value?.match);
   return {
     ...fallback,
     ...(value || {}),
@@ -1002,9 +1298,66 @@ function normalizeGame(value) {
     collectedPickups: useCurrentMap ? pruneGameTimedMap(value?.collectedPickups || {}, Date.now(), GAME_PICKUP_CLAIM_TTL_MS) : {},
     lastPepperoniSpawnAt: useCurrentMap ? Number(value?.lastPepperoniSpawnAt || fallback.lastPepperoniSpawnAt) : fallback.lastPepperoniSpawnAt,
     leaderboard: value?.leaderboard || {},
+    match,
+    lobby: pruneGameLobby(value?.lobby || {}, Date.now()),
     hits: value?.hits || {},
     killLog: value?.killLog || []
   };
+}
+
+function normalizeGameMatch(match = {}) {
+  return {
+    ...defaultGameMatchState(),
+    ...(match || {}),
+    queued: match?.queued || {},
+    participants: match?.participants || {},
+    scores: match?.scores || {},
+    finalScores: match?.finalScores || {}
+  };
+}
+
+function mergeGameMatch(remoteMatch = {}, localMatch = {}) {
+  const remote = normalizeGameMatch(remoteMatch);
+  const local = normalizeGameMatch(localMatch);
+  const status = remote.status === "ended" || local.status === "ended"
+    ? "ended"
+    : remote.status === "active" || local.status === "active"
+      ? "active"
+      : "idle";
+  const participants = { ...remote.participants, ...local.participants };
+  const queued = status === "active" ? {} : { ...remote.queued, ...local.queued };
+  const scores = mergeGameScoreMaps(remote.scores, local.scores, participants);
+  return {
+    ...remote,
+    ...local,
+    status,
+    queued,
+    participants,
+    scores,
+    finalScores: mergeGameScoreMaps(remote.finalScores, local.finalScores, participants),
+    startedAt: Number(remote.startedAt || local.startedAt || 0),
+    endsAt: Number(remote.endsAt || local.endsAt || 0),
+    matchId: remote.matchId || local.matchId || ""
+  };
+}
+
+function mergeGameScoreMaps(first = {}, second = {}, participants = {}) {
+  const merged = {};
+  [...Object.values(participants || {}), ...Object.values(first || {}), ...Object.values(second || {})].forEach((row) => {
+    if (!row?.uid) return;
+    const current = merged[row.uid] || { uid: row.uid, name: row.name || "Player", xp: 0 };
+    merged[row.uid] = {
+      ...current,
+      ...row,
+      name: row.name || current.name || "Player",
+      xp: Math.max(Number(current.xp || 0), Number(row.xp || 0))
+    };
+  });
+  return merged;
+}
+
+function pruneGameLobby(lobby = {}, now = Date.now()) {
+  return Object.fromEntries(Object.entries(lobby || {}).filter(([, entry]) => now - Number(entry?.lastSeen || 0) < GAME_LOBBY_STALE_MS));
 }
 
 function gameHitId(hit, uid) {
@@ -1086,7 +1439,7 @@ function gameTick(now) {
   }
   const dt = Math.min(0.04, (now - gameLastFrame) / 1000);
   gameLastFrame = now;
-  updateLocalGame(dt, Date.now());
+  if (gameLocalPlayer && !gameSpectating) updateLocalGame(dt, Date.now());
   updateGameVisualPlayers(dt);
   drawGame();
   gameAnimationId = requestAnimationFrame(gameTick);
@@ -1094,6 +1447,11 @@ function gameTick(now) {
 
 function updateLocalGame(dt, now) {
   if (!currentUser?.uid || !gameLocalPlayer) return;
+  const activeMatch = gameState?.match || defaultGameMatchState();
+  if (activeMatch.status === "active" && now >= Number(activeMatch.endsAt || 0)) {
+    maybeFinishGameMatch(now);
+    return;
+  }
   const player = { ...gameLocalPlayer };
   normalizeGamePlayerPowerup(player, now);
   const hitCountBefore = Object.keys(gameState.hits || {}).length;
@@ -1125,7 +1483,9 @@ function updateLocalGame(dt, now) {
     delete hits[currentUser.uid];
   }
 
-  if (player.alive) {
+  if (gameMatchFrozen(activeMatch, now)) {
+    showGameArenaStatus(gameCountdownText(activeMatch, now));
+  } else if (player.alive) {
     const vector = gameInputVector();
     if (vector.x || vector.y) {
       gameAim = vector;
@@ -1137,7 +1497,7 @@ function updateLocalGame(dt, now) {
       player.y = next.y;
     }
   }
-  if (gameFireHeld && player.powerup === "basil") {
+  if (!gameMatchFrozen(activeMatch, now) && gameFireHeld && player.powerup === "basil") {
     shootGamePizza();
   }
 
@@ -1156,16 +1516,16 @@ function updateLocalGame(dt, now) {
   let collectedPickups = pruneGameTimedMap(isHost ? gameState.collectedPickups || {} : serverGame.collectedPickups || {}, now, GAME_PICKUP_CLAIM_TTL_MS);
   let pepperoniPickups = filterGameAvailablePickups(isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(serverGame.pepperoniPickups || {}) }, collectedPickups);
   let lastPepperoniSpawnAt = isHost ? Number(gameState.lastPepperoniSpawnAt || 0) : Number(serverGame.lastPepperoniSpawnAt || 0);
-  if (isHost) {
+  if (isHost && !gameMatchFrozen(activeMatch, now)) {
     const spawned = spawnGamePepperoniPickups(pepperoniPickups, lastPepperoniSpawnAt, now);
     pepperoniPickups = spawned.pickups;
     lastPepperoniSpawnAt = spawned.lastSpawnAt;
   }
-  collectGameToppings(player, pepperoniPickups, collectedPickups, now);
+  if (!gameMatchFrozen(activeMatch, now)) collectGameToppings(player, pepperoniPickups, collectedPickups, now);
   players[currentUser.uid] = player;
-  const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
+  const leaderboard = gameState.leaderboard || {};
   const nextKillLog = [...(gameState.killLog || [])];
-  resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
+  if (!gameMatchFrozen(activeMatch, now)) resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
   gameState = {
     ...gameState,
     players,
@@ -1176,6 +1536,7 @@ function updateLocalGame(dt, now) {
     collectedPickups,
     lastPepperoniSpawnAt,
     leaderboard,
+    match: gameState.match || activeMatch,
     hits,
     killLog: nextKillLog.slice(-20),
     walls: GAME_WALLS,
@@ -1205,7 +1566,7 @@ async function syncLocalGame(now) {
   const nextGame = normalizeGame(gameState);
   const projectiles = pruneGameProjectiles(mergeGameProjectiles(gameRemoteProjectiles, nextGame.projectiles), now);
   const players = pruneGamePlayers({ ...nextGame.players, [currentUser.uid]: gameLocalPlayer });
-  const leaderboard = ensureGameLeaderboardEntry(nextGame.leaderboard, gameLocalPlayer);
+  const leaderboard = nextGame.leaderboard || {};
   const hits = pruneGameHits(nextGame.hits || {}, now);
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
@@ -1229,6 +1590,7 @@ async function syncLocalGame(now) {
     collectedPickups: syncedCollectedPickups || {},
     lastPepperoniSpawnAt: Number(syncedLastPepperoniSpawnAt || 0),
     leaderboard,
+    match: syncedMatch,
     hits,
     killLog: (nextGame.killLog || []).slice(-20),
     version: GAME_VERSION,
@@ -1237,6 +1599,65 @@ async function syncLocalGame(now) {
   gameState = { ...nextArena, zombies: nextGame.zombies };
   gameLocalPlayer = gameState.players[currentUser.uid];
   await writeGameArena(nextArena);
+}
+
+function gameCountdownText(match = {}, now = Date.now()) {
+  const remaining = Math.max(0, Number(match.startedAt || 0) - now);
+  if (remaining <= 500) return "GO";
+  const seconds = Math.min(3, Math.ceil((remaining - 500) / 1000));
+  return seconds > 0 ? String(seconds) : "GO";
+}
+
+function maybeFinishGameMatch(now = Date.now()) {
+  const arena = normalizeGame(gameState || familyData?.gameArena);
+  const match = arena.match;
+  if (match.status !== "active" || now < Number(match.endsAt || 0)) return;
+  const participantMap = match.participants || {};
+  const host = gameHostUid(participantMap);
+  if (host !== currentUser?.uid) return;
+  const finalScores = normalizeMatchScores(match.scores, participantMap);
+  const nextArena = {
+    ...arena,
+    projectiles: {},
+    match: {
+      ...match,
+      status: "ended",
+      finalScores,
+      queued: {}
+    },
+    updatedAt: now
+  };
+  gameState = nextArena;
+  writeGameArenaSharedState(nextArena);
+  updateGameModePanels();
+}
+
+function normalizeMatchScores(scores = {}, participants = {}) {
+  const rows = { ...(scores || {}) };
+  Object.values(participants || {}).forEach((participant) => {
+    if (!rows[participant.uid]) rows[participant.uid] = { uid: participant.uid, name: participant.name || "Player", xp: 0 };
+  });
+  return rows;
+}
+
+function awardGameXp(uid, amount) {
+  if (!uid || !gameState?.match || gameState.match.status !== "active") return;
+  if (!gameMatchParticipant(gameState.match, uid)) return;
+  if (Date.now() < Number(gameState.match.startedAt || 0) || Date.now() >= Number(gameState.match.endsAt || 0)) return;
+  const participant = gameState.match.participants?.[uid] || gameState.players?.[uid] || { uid, name: "Player" };
+  const current = gameState.match.scores?.[uid] || { uid, name: participant.name || "Player", xp: 0 };
+  gameState.match = {
+    ...gameState.match,
+    scores: {
+      ...(gameState.match.scores || {}),
+      [uid]: {
+        ...current,
+        uid,
+        name: participant.name || current.name || "Player",
+        xp: Number(current.xp || 0) + amount
+      }
+    }
+  };
 }
 
 async function writeGameArena(nextArena) {
@@ -1249,11 +1670,14 @@ async function writeGameArena(nextArena) {
     return;
   }
   const player = nextArena.players?.[currentUser.uid] || null;
+  const mergedMatch = mergeGameMatch(existingArena.match, nextArena.match);
   const isHost = currentUser.uid === gameHostUid(nextArena.players || {});
   const patch = {
     version: GAME_VERSION,
     updatedAt: Date.now(),
-    [`players/${currentUser.uid}`]: player
+    [`players/${currentUser.uid}`]: player,
+    [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
+    match: mergedMatch
   };
   Object.keys(existingPlayers).forEach((uid) => {
     if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
@@ -1274,6 +1698,18 @@ async function writeGameArena(nextArena) {
   });
 }
 
+async function writeFullGameArena(nextArena) {
+  familyData = { ...familyData, gameArena: nextArena };
+  if (!FIREBASE_READY) {
+    localStorage.setItem(demoStore.key, JSON.stringify(familyData));
+    return;
+  }
+  await services.rtdbFns.set(gameArenaRef(), nextArena).catch(() => {
+    setGameStatus("Error", false);
+    showGameArenaStatus("Realtime Database could not start the match.");
+  });
+}
+
 async function writeGameArenaSharedState(nextArena, options = {}) {
   if (!FIREBASE_READY) {
     await writeGameArena(nextArena);
@@ -1281,6 +1717,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
   }
   const mergedCollectedPickups = mergeGameTimedMaps(familyData?.gameArena?.collectedPickups, nextArena.collectedPickups);
   const mergedZombieDeaths = mergeGameTimedMaps(familyData?.gameArena?.zombieDeaths, nextArena.zombieDeaths);
+  const mergedMatch = mergeGameMatch(familyData?.gameArena?.match, nextArena.match);
   const patch = {
     version: GAME_VERSION,
     walls: GAME_WALLS,
@@ -1290,6 +1727,8 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
+    match: mergedMatch,
+    [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
     updatedAt: Date.now()
   };
   addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
@@ -1341,7 +1780,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
         if (shotType === "mushroom") {
           explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
-          killGameZombie(zombie, zombieDeaths, now);
+          killGameZombie(zombie, zombieDeaths, now, shot.ownerUid);
           gameRemovedProjectileIds.add(shot.id);
           delete projectiles[shot.id];
         }
@@ -1360,7 +1799,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
     });
     zombies.forEach((zombie) => {
       if (zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < GAME_MEATBALL_SIZE / 2 + GAME_ZOMBIE_RADIUS) {
-        killGameZombie(zombie, zombieDeaths, now);
+        killGameZombie(zombie, zombieDeaths, now, player.uid);
       }
     });
   });
@@ -1387,7 +1826,7 @@ function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard
   });
   zombies.forEach((zombie) => {
     if (zombie.alive && gameDistance(zombie.x, zombie.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + GAME_ZOMBIE_RADIUS) {
-      killGameZombie(zombie, zombieDeaths, now);
+      killGameZombie(zombie, zombieDeaths, now, shot.ownerUid);
     }
   });
   gameRemovedProjectileIds.add(shot.id);
@@ -1471,9 +1910,10 @@ function gamePepperoniDropPosition(x, y, index) {
   return resolveGameCircleOverlap(x, y, radius);
 }
 
-function killGameZombie(zombie, zombieDeaths = {}, now = Date.now()) {
+function killGameZombie(zombie, zombieDeaths = {}, now = Date.now(), killerUid = "") {
   zombie.alive = false;
   zombie.deadUntil = now + GAME_ZOMBIE_RESPAWN_MS;
+  awardGameXp(killerUid, GAME_XP.zombie);
   zombieDeaths[zombie.id] = {
     id: zombie.id,
     deadUntil: zombie.deadUntil,
@@ -1481,30 +1921,11 @@ function killGameZombie(zombie, zombieDeaths = {}, now = Date.now()) {
   };
 }
 
-function ensureGameLeaderboardEntry(leaderboard = {}, player) {
-  if (!player?.uid) return leaderboard || {};
-  return {
-    ...(leaderboard || {}),
-    [player.uid]: {
-      uid: player.uid,
-      name: player.name || "Player",
-      kills: Number(leaderboard?.[player.uid]?.kills || 0),
-      lastKillAt: leaderboard?.[player.uid]?.lastKillAt || 0
-    }
-  };
-}
-
 function recordGameKill(leaderboard, nextKillLog, killerUid, victimUid, players) {
   if (!killerUid || killerUid === victimUid) return;
+  awardGameXp(killerUid, GAME_XP.player);
   const killer = players[killerUid] || { uid: killerUid, name: "Player" };
   const victim = players[victimUid] || { uid: victimUid, name: "Player" };
-  const current = leaderboard[killerUid] || { uid: killerUid, name: killer.name || "Player", kills: 0 };
-  leaderboard[killerUid] = {
-    ...current,
-    name: killer.name || current.name || "Player",
-    kills: Number(current.kills || 0) + 1,
-    lastKillAt: Date.now()
-  };
   nextKillLog.push({
     id: `${killerUid}-${victimUid}-${Date.now()}`,
     killerUid,
@@ -1567,8 +1988,10 @@ function collectGameToppings(player, pickups, collectedPickups, now = Date.now()
       if (type === "pepperoni") {
         if (!canCollectAmmoTopping(player)) return;
         player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0) + 1);
+        awardGameXp(player.uid, GAME_XP.pepperoni);
       } else {
         if (!applyGamePowerup(player, type, now)) return;
+        awardGameXp(player.uid, GAME_XP.special);
       }
       collectedPickups[pickup.id] = now;
       gameConsumedPickupIds.add(pickup.id);
@@ -2003,6 +2426,7 @@ function mergeGameProjectiles(remote = {}, local = {}) {
 function shootGamePizza() {
   const now = Date.now();
   if (!currentUser?.uid || !gameLocalPlayer?.alive) return;
+  if (gameSpectating || gameMatchFrozen(gameState?.match || {}, now) || gameState?.match?.status === "ended") return;
   normalizeGamePlayerPowerup(gameLocalPlayer, now);
   const shotType = gameCurrentShotType(gameLocalPlayer);
   const cooldown = shotType === "basil" ? GAME_BASIL_FIRE_MS : 430;
@@ -2072,12 +2496,21 @@ function drawGame() {
   drawGameExplosionEffects(ctx);
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
-  if (gameLocalPlayer && !gameLocalPlayer.alive) {
+  const match = gameState.match || defaultGameMatchState();
+  if (gameMatchFrozen(match)) {
+    showGameArenaStatus(gameCountdownText(match));
+  } else if (match.status === "active") {
+    const seconds = Math.max(0, Math.ceil((Number(match.endsAt || 0) - Date.now()) / 1000));
+    showGameArenaStatus(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`);
+  } else if (match.status === "ended") {
+    showGameArenaStatus("Match complete");
+    updateGameModePanels();
+  } else if (gameLocalPlayer && !gameLocalPlayer.alive) {
     showGameArenaStatus("Respawning...");
   } else if (document.querySelector("#game-connection-status")?.textContent === "Online") {
     hideGameArenaStatus();
   }
-  if (!document.querySelector("#leaderboard-panel")?.hidden) renderGameLeaderboard();
+  renderMatchLeaderboard();
 }
 
 function updateGameVisualPlayers(dt) {
@@ -2116,17 +2549,49 @@ function updateGameVisualPlayers(dt) {
   gameVisualPlayers = nextVisualPlayers;
 }
 
-function renderGameLeaderboard() {
-  const leaderboardList = document.querySelector("#leaderboard-list");
-  if (!leaderboardList || !gameState) return;
-  const rows = Object.values(gameState.leaderboard || {})
-    .sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0) || (a.name || "").localeCompare(b.name || ""));
-  const leaderboardRows = rows.length ? rows : [{ name: "No kills yet", kills: 0 }];
-  leaderboardList.replaceChildren(...leaderboardRows.map((row) => {
-    const item = document.createElement("li");
-    item.innerHTML = `<strong>${escapeHtml(row.name || "Player")}</strong> - ${Number(row.kills || 0)} kill${Number(row.kills || 0) === 1 ? "" : "s"}`;
+function renderMatchLeaderboard() {
+  const arena = normalizeGame(gameState || familyData?.gameArena);
+  const match = arena.match;
+  const liveList = document.querySelector("#match-leaderboard");
+  const finalList = document.querySelector("#final-match-leaderboard");
+  const rows = gameMatchRows(match);
+  [liveList, finalList].forEach((list) => {
+    if (!list) return;
+    const listRows = rows.length ? rows : [{ uid: "empty", name: "No scores yet", xp: 0 }];
+    updateMatchListRows(list, listRows);
+  });
+}
+
+function updateMatchListRows(list, rows) {
+  const previousTops = new Map([...list.children].map((item) => [item.dataset.uid, item.getBoundingClientRect().top]));
+  const existing = new Map([...list.children].map((item) => [item.dataset.uid, item]));
+  const nextItems = rows.map((row, index) => {
+    const item = existing.get(row.uid) || document.createElement("li");
+    item.dataset.uid = row.uid;
+    item.innerHTML = `
+      <span class="match-place">${index + 1}</span>
+      <strong>${escapeHtml(row.name || "Player")}</strong>
+      <span>${Number(row.xp || 0)} XP</span>
+    `;
     return item;
-  }));
+  });
+  list.replaceChildren(...nextItems);
+  nextItems.forEach((item) => {
+    const previousTop = previousTops.get(item.dataset.uid);
+    if (previousTop === undefined) return;
+    const delta = previousTop - item.getBoundingClientRect().top;
+    if (Math.abs(delta) < 1) return;
+    item.animate([
+      { transform: `translateY(${delta}px)` },
+      { transform: "translateY(0)" }
+    ], { duration: 240, easing: "ease" });
+  });
+}
+
+function gameMatchRows(match = {}) {
+  const source = match.status === "ended" ? match.finalScores : match.scores;
+  return Object.values(normalizeMatchScores(source || {}, match.participants || {}))
+    .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0) || (a.name || "").localeCompare(b.name || ""));
 }
 
 function drawGameGrid(ctx) {
@@ -2546,9 +3011,6 @@ function gameRoundRect(ctx, x, y, w, h, r) {
 function attachGameControls() {
   const shootButton = document.querySelector("#shoot-button");
   const mobileShootButton = document.querySelector("#mobile-shoot-button");
-  const leaderboardButton = document.querySelector("#leaderboard-button");
-  const leaderboardPanel = document.querySelector("#leaderboard-panel");
-  const closeLeaderboardButton = document.querySelector("#close-leaderboard");
   const joystick = document.querySelector("#joystick");
 
   shootButton?.addEventListener("pointerdown", shootGameFromButton);
@@ -2559,13 +3021,6 @@ function attachGameControls() {
   mobileShootButton?.addEventListener("pointerup", stopGameFire);
   mobileShootButton?.addEventListener("pointercancel", stopGameFire);
   mobileShootButton?.addEventListener("pointerleave", stopGameFire);
-  leaderboardButton?.addEventListener("click", () => {
-    leaderboardPanel.hidden = false;
-    renderGameLeaderboard();
-  });
-  closeLeaderboardButton?.addEventListener("click", () => {
-    leaderboardPanel.hidden = true;
-  });
   joystick?.addEventListener("pointerdown", handleGameJoystick);
   joystick?.addEventListener("pointermove", handleGameJoystick);
   joystick?.addEventListener("pointerup", resetGameJoystick);
@@ -2659,8 +3114,10 @@ function cleanupGame() {
     gameTouchMoveLocked = false;
   }
   if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
+  if (gameLobbyPresenceTimer) window.clearInterval(gameLobbyPresenceTimer);
   cleanupGameArenaListener();
   gameAnimationId = null;
+  gameLobbyPresenceTimer = null;
   gameState = null;
   gameLocalPlayer = null;
   gameRemoteProjectiles = {};
