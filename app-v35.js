@@ -38,7 +38,7 @@ const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
 const GAME_VERSION = 4;
 const GAME_ARENA = { width: 960, height: 1120 };
-const GAME_PLAYER_SIZE = 36;
+const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
 const GAME_PIZZA_SPEED = 520;
 const GAME_PIZZA_LIFE_MS = 1300;
@@ -1301,11 +1301,12 @@ function shootGamePizza() {
   gameLastShotAt = now;
   const shotId = `${currentUser.uid}-${now}`;
   const mag = Math.hypot(gameAim.x, gameAim.y) || 1;
+  const shotOffset = GAME_PLAYER_SIZE / 2 + 12;
   const shot = {
     id: shotId,
     ownerUid: currentUser.uid,
-    x: gameLocalPlayer.x + (gameAim.x / mag) * 24,
-    y: gameLocalPlayer.y + (gameAim.y / mag) * 24,
+    x: gameLocalPlayer.x + (gameAim.x / mag) * shotOffset,
+    y: gameLocalPlayer.y + (gameAim.y / mag) * shotOffset,
     vx: (gameAim.x / mag) * GAME_PIZZA_SPEED,
     vy: (gameAim.y / mag) * GAME_PIZZA_SPEED,
     createdAt: now,
@@ -1413,23 +1414,42 @@ function drawGameTomato(ctx, tomato) {
 }
 
 function drawGamePlayer(ctx, player) {
+  const radius = GAME_PLAYER_SIZE / 2;
+  const aimX = Number(player.aimX || 1);
+  const aimY = Number(player.aimY || 0);
+  const aimMag = Math.hypot(aimX, aimY) || 1;
+  const facingAngle = Math.atan2(aimY / aimMag, aimX / aimMag);
   ctx.save();
   ctx.globalAlpha = player.alive ? 1 : 0.35;
   ctx.fillStyle = player.color;
   ctx.strokeStyle = "#fff4df";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.arc(player.x, player.y, GAME_PLAYER_SIZE / 2, 0, Math.PI * 2);
+  ctx.arc(player.x, player.y, radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  ctx.rotate(facingAngle);
+  ctx.fillStyle = "#fff4df";
+  ctx.strokeStyle = "#111019";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(radius - 5, 0);
+  ctx.lineTo(radius - 24, -10);
+  ctx.lineTo(radius - 24, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
   ctx.fillStyle = "#111019";
-  ctx.font = "900 12px system-ui";
+  ctx.font = "900 20px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), player.x, player.y + 0.5);
   ctx.fillStyle = "#fff4df";
-  ctx.font = "800 13px system-ui";
-  ctx.fillText(player.name || "Player", player.x, player.y - 26);
+  ctx.font = "900 16px system-ui";
+  ctx.fillText(player.name || "Player", player.x, player.y - radius - 10);
   ctx.restore();
 }
 
@@ -1456,14 +1476,15 @@ function drawGamePizzaShot(ctx, shot) {
 
 function randomGameSpawn() {
   const state = gameState || normalizeGame(familyData?.gameArena);
+  const radius = GAME_PLAYER_SIZE / 2;
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    const x = 38 + Math.random() * (GAME_ARENA.width - 76);
-    const y = 38 + Math.random() * (GAME_ARENA.height - 76);
-    const blocked = state.walls.some((rect) => gameCircleRectHit(x, y, GAME_PLAYER_SIZE, rect))
-      || state.tomatoes.some((tomato) => gameDistance(x, y, tomato.x, tomato.y) < 90);
+    const x = radius + 4 + Math.random() * (GAME_ARENA.width - (radius + 4) * 2);
+    const y = radius + 4 + Math.random() * (GAME_ARENA.height - (radius + 4) * 2);
+    const blocked = state.walls.some((rect) => gameCircleRectHit(x, y, radius, rect))
+      || state.tomatoes.some((tomato) => gameDistance(x, y, tomato.x, tomato.y) < radius + 72);
     if (!blocked) return { x, y };
   }
-  return { x: 60, y: 60 };
+  return { x: radius + 24, y: radius + 24 };
 }
 
 function gameInputVector() {
@@ -1476,10 +1497,11 @@ function gameInputVector() {
 }
 
 function moveGamePlayerWithWalls(x, y, dx, dy) {
-  let nextX = gameClamp(x + dx, GAME_PLAYER_SIZE, GAME_ARENA.width - GAME_PLAYER_SIZE);
-  let nextY = gameClamp(y + dy, GAME_PLAYER_SIZE, GAME_ARENA.height - GAME_PLAYER_SIZE);
-  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, y, GAME_PLAYER_SIZE / 2, wall))) nextX = x;
-  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, nextY, GAME_PLAYER_SIZE / 2, wall))) nextY = y;
+  const radius = GAME_PLAYER_SIZE / 2;
+  let nextX = gameClamp(x + dx, radius, GAME_ARENA.width - radius);
+  let nextY = gameClamp(y + dy, radius, GAME_ARENA.height - radius);
+  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, y, radius, wall))) nextX = x;
+  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, nextY, radius, wall))) nextY = y;
   return { x: nextX, y: nextY };
 }
 
