@@ -60,6 +60,7 @@ const GAME_PEPPERONI_PICKUP_SIZE = 22;
 const GAME_MAX_MAP_PEPPERONI = 15;
 const GAME_MAX_PLAYER_PEPPERONI = 10;
 const GAME_PEPPERONI_SPAWN_MS = 2000;
+const GAME_PICKUP_CLAIM_TTL_MS = 9000;
 const GAME_SPECIAL_TOPPING_CHANCE = 0.1;
 const GAME_SPECIAL_TOPPING_DURATION_MS = 10000;
 const GAME_MUSHROOM_FUSE_MS = 700;
@@ -124,6 +125,7 @@ let gameExplosionEffects = [];
 let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
+let gameConsumedPickupIds = new Set();
 let gameZombieImage = null;
 
 const demoStore = {
@@ -956,7 +958,9 @@ function defaultGameState() {
     projectiles: {},
     walls: GAME_WALLS,
     zombies: GAME_ZOMBIE_STARTS.map((zombie) => ({ ...zombie })),
+    zombieDeaths: {},
     pepperoniPickups: {},
+    collectedPickups: {},
     lastPepperoniSpawnAt: Date.now() - GAME_PEPPERONI_SPAWN_MS,
     leaderboard: {},
     hits: {},
@@ -976,7 +980,9 @@ function normalizeGame(value) {
     projectiles: value?.projectiles || {},
     walls: GAME_WALLS,
     zombies: useCurrentMap && value?.zombies ? normalizeGameZombies(value.zombies) : fallback.zombies,
+    zombieDeaths: useCurrentMap ? pruneGameTimedMap(value?.zombieDeaths || {}, Date.now()) : {},
     pepperoniPickups: useCurrentMap && value?.pepperoniPickups ? value.pepperoniPickups : fallback.pepperoniPickups,
+    collectedPickups: useCurrentMap ? pruneGameTimedMap(value?.collectedPickups || {}, Date.now(), GAME_PICKUP_CLAIM_TTL_MS) : {},
     lastPepperoniSpawnAt: useCurrentMap ? Number(value?.lastPepperoniSpawnAt || fallback.lastPepperoniSpawnAt) : fallback.lastPepperoniSpawnAt,
     leaderboard: value?.leaderboard || {},
     hits: value?.hits || {},
@@ -995,6 +1001,37 @@ function pruneGameHits(hits = {}, now = Date.now()) {
     if (uid === currentUser?.uid && gameConsumedHitIds.has(gameHitId(hit, uid))) return false;
     return true;
   }));
+}
+
+function pruneGameTimedMap(items = {}, now = Date.now(), ttl = GAME_ZOMBIE_RESPAWN_MS + 1200) {
+  return Object.fromEntries(Object.entries(items || {}).filter(([, value]) => {
+    if (value && typeof value === "object" && Number(value.deadUntil || 0)) return Number(value.deadUntil || 0) > now;
+    const createdAt = Number(value?.createdAt || value || 0);
+    return createdAt && now - createdAt < ttl;
+  }));
+}
+
+function mergeGameTimedMaps(first = {}, second = {}) {
+  return {
+    ...(first || {}),
+    ...(second || {})
+  };
+}
+
+function gameTimedMapSignature(items = {}) {
+  return Object.entries(items || {})
+    .map(([key, value]) => `${key}:${Number(value?.deadUntil || value?.createdAt || value || 0)}`)
+    .sort()
+    .join("|");
+}
+
+function filterGameAvailablePickups(pickups = {}, collectedPickups = {}) {
+  return Object.fromEntries(Object.entries(pickups || {}).filter(([id]) => !collectedPickups?.[id] && !gameConsumedPickupIds.has(id)));
+}
+
+function gamePickupPatchValue(pickups = {}, collectedPickups = {}) {
+  const available = filterGameAvailablePickups(pickups, collectedPickups);
+  return Object.keys(available).length ? available : null;
 }
 
 function createGamePlayer() {
@@ -1079,29 +1116,35 @@ function updateLocalGame(dt, now) {
   const projectileCountBefore = Object.keys(gameState.projectiles || {}).length;
   const pepperoniCountBefore = Object.keys(gameState.pepperoniPickups || {}).length;
   const zombieSignatureBefore = gameZombieSignature(gameState.zombies || []);
+  const collectedSignatureBefore = gameTimedMapSignature(gameState.collectedPickups || {});
+  const zombieDeathsSignatureBefore = gameTimedMapSignature(gameState.zombieDeaths || {});
   const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
-  const zombies = isHost ? moveGameZombies(gameState.zombies, players, dt, now) : serverGame.zombies;
-  let pepperoniPickups = isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(normalizeGame(familyData?.gameArena).pepperoniPickups || {}) };
-  let lastPepperoniSpawnAt = isHost ? Number(gameState.lastPepperoniSpawnAt || 0) : Number(normalizeGame(familyData?.gameArena).lastPepperoniSpawnAt || 0);
+  let zombieDeaths = pruneGameTimedMap(isHost ? gameState.zombieDeaths || {} : serverGame.zombieDeaths || {}, now);
+  const zombies = isHost ? moveGameZombies(gameState.zombies, players, dt, now, zombieDeaths) : applyGameZombieDeaths(serverGame.zombies, zombieDeaths);
+  let collectedPickups = pruneGameTimedMap(isHost ? gameState.collectedPickups || {} : serverGame.collectedPickups || {}, now, GAME_PICKUP_CLAIM_TTL_MS);
+  let pepperoniPickups = filterGameAvailablePickups(isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(serverGame.pepperoniPickups || {}) }, collectedPickups);
+  let lastPepperoniSpawnAt = isHost ? Number(gameState.lastPepperoniSpawnAt || 0) : Number(serverGame.lastPepperoniSpawnAt || 0);
   if (isHost) {
     const spawned = spawnGamePepperoniPickups(pepperoniPickups, lastPepperoniSpawnAt, now);
     pepperoniPickups = spawned.pickups;
     lastPepperoniSpawnAt = spawned.lastSpawnAt;
   }
-  collectGameToppings(player, pepperoniPickups, now);
+  collectGameToppings(player, pepperoniPickups, collectedPickups, now);
   players[currentUser.uid] = player;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
-  resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, now);
+  resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
   gameState = {
     ...gameState,
     players,
     projectiles,
     zombies,
+    zombieDeaths,
     pepperoniPickups,
+    collectedPickups,
     lastPepperoniSpawnAt,
     leaderboard,
     hits,
@@ -1112,12 +1155,16 @@ function updateLocalGame(dt, now) {
   };
   gameLocalPlayer = gameState.players[currentUser.uid];
   const zombieSharedChanged = !isHost && gameZombieSignature(gameState.zombies || []) !== zombieSignatureBefore;
+  const collectedSharedChanged = gameTimedMapSignature(gameState.collectedPickups || {}) !== collectedSignatureBefore;
+  const zombieDeathsSharedChanged = gameTimedMapSignature(gameState.zombieDeaths || {}) !== zombieDeathsSignatureBefore;
   const sharedArenaChanged = Object.keys(hits).length !== hitCountBefore
     || Object.keys(projectiles).length !== projectileCountBefore
     || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore
-    || zombieSharedChanged;
+    || zombieSharedChanged
+    || collectedSharedChanged
+    || zombieDeathsSharedChanged;
   if (sharedArenaChanged) {
-    writeGameArenaSharedState(gameState, { includeZombies: zombieSharedChanged });
+    writeGameArenaSharedState(gameState, { includeZombies: zombieSharedChanged || zombieDeathsSharedChanged });
   }
   if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
     gameLastHeartbeat = now;
@@ -1138,7 +1185,9 @@ async function syncLocalGame(now) {
     : gameZombieSignature(nextGame.zombies) === gameZombieSignature(serverGame.zombies)
       ? serverGame.zombies
       : nextGame.zombies;
-  const syncedPepperoniPickups = isHost ? nextGame.pepperoniPickups : serverGame.pepperoniPickups;
+  const syncedCollectedPickups = isHost ? nextGame.collectedPickups : mergeGameTimedMaps(serverGame.collectedPickups, nextGame.collectedPickups);
+  const syncedZombieDeaths = isHost ? nextGame.zombieDeaths : mergeGameTimedMaps(serverGame.zombieDeaths, nextGame.zombieDeaths);
+  const syncedPepperoniPickups = filterGameAvailablePickups(isHost ? nextGame.pepperoniPickups : serverGame.pepperoniPickups, syncedCollectedPickups);
   const syncedLastPepperoniSpawnAt = isHost ? nextGame.lastPepperoniSpawnAt : serverGame.lastPepperoniSpawnAt;
   const nextArena = {
     ...nextGame,
@@ -1146,7 +1195,9 @@ async function syncLocalGame(now) {
     projectiles,
     walls: GAME_WALLS,
     zombies: syncedZombies,
+    zombieDeaths: syncedZombieDeaths || {},
     pepperoniPickups: syncedPepperoniPickups || {},
+    collectedPickups: syncedCollectedPickups || {},
     lastPepperoniSpawnAt: Number(syncedLastPepperoniSpawnAt || 0),
     leaderboard,
     hits,
@@ -1179,7 +1230,9 @@ async function writeGameArena(nextArena) {
   });
   if (isHost || !existingZombies) {
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
-    patch.pepperoniPickups = Object.keys(nextArena.pepperoniPickups || {}).length ? nextArena.pepperoniPickups : null;
+    patch.zombieDeaths = Object.keys(nextArena.zombieDeaths || {}).length ? nextArena.zombieDeaths : null;
+    patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, nextArena.collectedPickups || {});
+    patch.collectedPickups = Object.keys(nextArena.collectedPickups || {}).length ? nextArena.collectedPickups : null;
     patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
   }
 
@@ -1198,7 +1251,9 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     version: GAME_VERSION,
     walls: GAME_WALLS,
     projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
-    pepperoniPickups: Object.keys(nextArena.pepperoniPickups || {}).length ? nextArena.pepperoniPickups : null,
+    pepperoniPickups: gamePickupPatchValue(nextArena.pepperoniPickups || {}, nextArena.collectedPickups || {}),
+    collectedPickups: Object.keys(nextArena.collectedPickups || {}).length ? nextArena.collectedPickups : null,
+    zombieDeaths: Object.keys(nextArena.zombieDeaths || {}).length ? nextArena.zombieDeaths : null,
     lastPepperoniSpawnAt: Number(nextArena.lastPepperoniSpawnAt || 0),
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
@@ -1214,17 +1269,17 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
   });
 }
 
-function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, now) {
+function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now) {
   Object.values(projectiles).forEach((shot) => {
     if (shot.ownerUid !== currentUser.uid) return;
     const shotType = shot.type || "pepperoni";
     if (shotType === "mushroom" && now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS) {
-      explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
+      explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
       return;
     }
     if (gameProjectileHitsWall(shot)) {
       if (shotType === "mushroom") {
-        explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
+        explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
       } else {
         gameRemovedProjectileIds.add(shot.id);
         delete projectiles[shot.id];
@@ -1237,7 +1292,7 @@ function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog
       if (!player.alive || player.powerup === "meatball" || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
       if (gameDistance(player.x, player.y, shot.x, shot.y) < gamePlayerHitRadius(player) + GAME_PIZZA_PROJECTILE_SIZE / 2) {
         if (shotType === "mushroom") {
-          explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
+          explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
           killGamePlayerByUid(player.uid, shot.ownerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, shot.id);
           gameRemovedProjectileIds.add(shot.id);
@@ -1250,9 +1305,9 @@ function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog
       if (!projectiles[shot.id] || !zombie.alive) return;
       if (gameDistance(zombie.x, zombie.y, shot.x, shot.y) < GAME_ZOMBIE_RADIUS + GAME_PIZZA_PROJECTILE_SIZE / 2) {
         if (shotType === "mushroom") {
-          explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
+          explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
-          killGameZombie(zombie, now);
+          killGameZombie(zombie, zombieDeaths, now);
           gameRemovedProjectileIds.add(shot.id);
           delete projectiles[shot.id];
         }
@@ -1271,7 +1326,7 @@ function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog
     });
     zombies.forEach((zombie) => {
       if (zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < GAME_MEATBALL_SIZE / 2 + GAME_ZOMBIE_RADIUS) {
-        killGameZombie(zombie, now);
+        killGameZombie(zombie, zombieDeaths, now);
       }
     });
   });
@@ -1286,7 +1341,7 @@ function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog
   });
 }
 
-function explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now) {
+function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now) {
   addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
@@ -1297,7 +1352,7 @@ function explodeGameProjectile(shot, players, zombies, leaderboard, nextKillLog,
   });
   zombies.forEach((zombie) => {
     if (zombie.alive && gameDistance(zombie.x, zombie.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + GAME_ZOMBIE_RADIUS) {
-      killGameZombie(zombie, now);
+      killGameZombie(zombie, zombieDeaths, now);
     }
   });
   gameRemovedProjectileIds.add(shot.id);
@@ -1380,9 +1435,14 @@ function gamePepperoniDropPosition(x, y, index) {
   return resolveGameCircleOverlap(x, y, radius);
 }
 
-function killGameZombie(zombie, now = Date.now()) {
+function killGameZombie(zombie, zombieDeaths = {}, now = Date.now()) {
   zombie.alive = false;
   zombie.deadUntil = now + GAME_ZOMBIE_RESPAWN_MS;
+  zombieDeaths[zombie.id] = {
+    id: zombie.id,
+    deadUntil: zombie.deadUntil,
+    createdAt: now
+  };
 }
 
 function ensureGameLeaderboardEntry(leaderboard = {}, player) {
@@ -1458,10 +1518,14 @@ function randomGamePepperoniSpawn(existingPickups = {}) {
   return null;
 }
 
-function collectGameToppings(player, pickups, now = Date.now()) {
+function collectGameToppings(player, pickups, collectedPickups, now = Date.now()) {
   if (!player?.alive) return;
   normalizeGamePlayerPowerup(player, now);
   Object.values(pickups || {}).forEach((pickup) => {
+    if (collectedPickups?.[pickup.id] || gameConsumedPickupIds.has(pickup.id)) {
+      delete pickups[pickup.id];
+      return;
+    }
     if (gameDistance(player.x, player.y, pickup.x, pickup.y) <= GAME_PLAYER_SIZE / 2 + GAME_PEPPERONI_PICKUP_SIZE / 2) {
       const type = pickup.type || "pepperoni";
       if (type === "pepperoni") {
@@ -1470,6 +1534,8 @@ function collectGameToppings(player, pickups, now = Date.now()) {
       } else {
         if (!applyGamePowerup(player, type, now)) return;
       }
+      collectedPickups[pickup.id] = now;
+      gameConsumedPickupIds.add(pickup.id);
       delete pickups[pickup.id];
     }
   });
@@ -1521,8 +1587,8 @@ function gamePlayerMoveSpeed(player) {
   return player?.powerup === "meatball" ? GAME_PLAYER_SPEED * GAME_MEATBALL_SPEED_MULTIPLIER : GAME_PLAYER_SPEED;
 }
 
-function moveGameZombies(zombies, players, dt, now = Date.now()) {
-  const normalizedZombies = normalizeGameZombies(zombies).slice(0, GAME_ZOMBIE_MAX);
+function moveGameZombies(zombies, players, dt, now = Date.now(), zombieDeaths = {}) {
+  const normalizedZombies = applyGameZombieDeaths(normalizeGameZombies(zombies).slice(0, GAME_ZOMBIE_MAX), zombieDeaths);
   const aggroZombieIds = gameAggroZombieIds(normalizedZombies, players, now);
   return normalizedZombies.map((zombie) => {
     let nextZombie = zombie;
@@ -1538,6 +1604,7 @@ function moveGameZombies(zombies, players, dt, now = Date.now()) {
         vy: spawn?.vy || nextZombie.vy || 0,
         nextTurnAt: now + randomGameZombieTurnDelay()
       };
+      delete zombieDeaths[nextZombie.id];
     }
 
     nextZombie = normalizeGameZombie(nextZombie, now);
@@ -1593,6 +1660,19 @@ function normalizeGameZombies(zombies = []) {
     deadUntil: Number(zombie.deadUntil || 0),
     nextTurnAt: Number(zombie.nextTurnAt || 0)
   }, now));
+}
+
+function applyGameZombieDeaths(zombies = [], zombieDeaths = {}) {
+  const now = Date.now();
+  return normalizeGameZombies(zombies).map((zombie) => {
+    const death = zombieDeaths?.[zombie.id];
+    if (!death || Number(death.deadUntil || 0) <= now) return zombie;
+    return {
+      ...zombie,
+      alive: false,
+      deadUntil: Number(death.deadUntil || 0)
+    };
+  });
 }
 
 function mergeGameZombies(remote = [], local = []) {
@@ -2493,6 +2573,7 @@ function cleanupGame() {
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   gameConsumedHitIds = new Set();
   gameRemovedProjectileIds = new Set();
+  gameConsumedPickupIds = new Set();
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
 }
