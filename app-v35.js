@@ -1429,6 +1429,11 @@ function applyGamePowerup(player, type, now = Date.now()) {
   if (type === "meatball" || type === "basil") {
     player.pepperoniCount = currentAmmo;
   }
+  if (type === "meatball") {
+    const resolved = resolveGameCircleOverlap(player.x, player.y, GAME_MEATBALL_SIZE / 2);
+    player.x = resolved.x;
+    player.y = resolved.y;
+  }
   return true;
 }
 
@@ -2153,6 +2158,39 @@ function moveGamePlayerWithWalls(x, y, dx, dy, radius = GAME_PLAYER_SIZE / 2) {
   if (gameState.walls.some((wall) => gameCircleRectHit(nextX, y, radius, wall))) nextX = x;
   if (gameState.walls.some((wall) => gameCircleRectHit(nextX, nextY, radius, wall))) nextY = y;
   return { x: nextX, y: nextY };
+}
+
+function resolveGameCircleOverlap(x, y, radius) {
+  let next = {
+    x: gameClamp(x, radius, GAME_ARENA.width - radius),
+    y: gameClamp(y, radius, GAME_ARENA.height - radius)
+  };
+  for (let pass = 0; pass < 6; pass += 1) {
+    const wall = GAME_WALLS.find((rect) => gameCircleRectHit(next.x, next.y, radius, rect));
+    if (!wall) break;
+    const moves = [
+      { axis: "x", value: wall.x - radius - 1, distance: Math.abs(next.x - (wall.x - radius - 1)) },
+      { axis: "x", value: wall.x + wall.w + radius + 1, distance: Math.abs(next.x - (wall.x + wall.w + radius + 1)) },
+      { axis: "y", value: wall.y - radius - 1, distance: Math.abs(next.y - (wall.y - radius - 1)) },
+      { axis: "y", value: wall.y + wall.h + radius + 1, distance: Math.abs(next.y - (wall.y + wall.h + radius + 1)) }
+    ].sort((a, b) => a.distance - b.distance);
+    const move = moves.find((candidate) => {
+      const candidateX = candidate.axis === "x" ? candidate.value : next.x;
+      const candidateY = candidate.axis === "y" ? candidate.value : next.y;
+      return candidateX >= radius
+        && candidateX <= GAME_ARENA.width - radius
+        && candidateY >= radius
+        && candidateY <= GAME_ARENA.height - radius
+        && !GAME_WALLS.some((rect) => gameCircleRectHit(candidateX, candidateY, radius, rect));
+    }) || moves[0];
+    next = {
+      x: move.axis === "x" ? move.value : next.x,
+      y: move.axis === "y" ? move.value : next.y
+    };
+    next.x = gameClamp(next.x, radius, GAME_ARENA.width - radius);
+    next.y = gameClamp(next.y, radius, GAME_ARENA.height - radius);
+  }
+  return next;
 }
 
 function gameCircleRectHit(cx, cy, radius, rect) {
