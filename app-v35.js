@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 9;
+const GAME_VERSION = 10;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -1233,18 +1233,45 @@ function moveGameTomatoes(tomatoes, dt) {
       next.y = wanderingTomato.y;
       next = turnGameTomato({ ...next, vy: -next.vy }, now);
     }
-    return next;
+    return unstickGameTomato(next);
   });
 }
 
 function normalizeGameTomato(tomato, now) {
   const magnitude = Math.hypot(tomato.vx, tomato.vy) || 1;
-  return {
+  return unstickGameTomato({
     ...tomato,
     vx: tomato.vx / magnitude,
     vy: tomato.vy / magnitude,
     nextTurnAt: tomato.nextTurnAt || now + randomGameTomatoTurnDelay()
-  };
+  });
+}
+
+function unstickGameTomato(tomato) {
+  const radius = GAME_TOMATO_SIZE / 2;
+  let next = { ...tomato };
+  for (let pass = 0; pass < 3; pass += 1) {
+    const wall = GAME_WALLS.find((rect) => gameCircleRectHit(next.x, next.y, radius, rect));
+    if (!wall) break;
+    const moves = [
+      { axis: "x", value: wall.x - radius - 1, distance: Math.abs(next.x - (wall.x - radius - 1)) },
+      { axis: "x", value: wall.x + wall.w + radius + 1, distance: Math.abs(next.x - (wall.x + wall.w + radius + 1)) },
+      { axis: "y", value: wall.y - radius - 1, distance: Math.abs(next.y - (wall.y - radius - 1)) },
+      { axis: "y", value: wall.y + wall.h + radius + 1, distance: Math.abs(next.y - (wall.y + wall.h + radius + 1)) }
+    ].sort((a, b) => a.distance - b.distance);
+    const move = moves.find((candidate) => {
+      const x = candidate.axis === "x" ? candidate.value : next.x;
+      const y = candidate.axis === "y" ? candidate.value : next.y;
+      return x >= radius && x <= GAME_ARENA.width - radius && y >= radius && y <= GAME_ARENA.height - radius;
+    }) || moves[0];
+    next = {
+      ...next,
+      [move.axis]: move.axis === "x"
+        ? gameClamp(move.value, radius, GAME_ARENA.width - radius)
+        : gameClamp(move.value, radius, GAME_ARENA.height - radius)
+    };
+  }
+  return next;
 }
 
 function turnGameTomato(tomato, now) {
