@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 7;
+const GAME_VERSION = 8;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -57,14 +57,14 @@ const GAME_WALLS = [
   { x: 936, y: 0, w: 24, h: 1120 },
   { x: 120, y: 130, w: 210, h: 28 },
   { x: 515, y: 165, w: 290, h: 28 },
-  { x: 380, y: 285, w: 28, h: 155 },
-  { x: 710, y: 335, w: 28, h: 180 },
-  { x: 100, y: 500, w: 280, h: 28 },
-  { x: 560, y: 592, w: 255, h: 28 },
-  { x: 235, y: 685, w: 28, h: 175 },
-  { x: 610, y: 742, w: 28, h: 150 },
-  { x: 300, y: 900, w: 260, h: 28 },
-  { x: 735, y: 980, w: 115, h: 28 }
+  { x: 440, y: 290, w: 28, h: 145 },
+  { x: 760, y: 330, w: 28, h: 140 },
+  { x: 100, y: 520, w: 265, h: 28 },
+  { x: 555, y: 600, w: 255, h: 28 },
+  { x: 230, y: 690, w: 28, h: 140 },
+  { x: 655, y: 735, w: 28, h: 130 },
+  { x: 330, y: 925, w: 230, h: 28 },
+  { x: 720, y: 990, w: 120, h: 28 }
 ];
 const GAME_TOMATO_STARTS = [
   { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
