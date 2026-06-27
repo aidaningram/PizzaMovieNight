@@ -1073,7 +1073,7 @@ function createGamePlayer() {
     savedPepperoniCount: 0,
     alive: true,
     deadUntil: 0,
-    shieldUntil: 0,
+    shieldUntil: Date.now() + GAME_RESPAWN_SHIELD_MS,
     lastSeen: Date.now()
   };
 }
@@ -2413,6 +2413,10 @@ function drawGamePlayer(ctx, player) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), crustX + 7, 0.5);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(player.x, player.y);
   drawGameShieldIcon(ctx, player, now);
   ctx.restore();
 
