@@ -38,7 +38,7 @@ const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
 const GAME_VERSION = 4;
 const GAME_ARENA = { width: 960, height: 1120 };
-const GAME_PLAYER_SIZE = 28;
+const GAME_PLAYER_SIZE = 36;
 const GAME_PLAYER_SPEED = 235;
 const GAME_PIZZA_SPEED = 520;
 const GAME_PIZZA_LIFE_MS = 1300;
@@ -851,6 +851,7 @@ function renderMembersList() {
 }
 
 function renderGamePage() {
+  document.body.classList.add("game-active");
   appRoot.replaceChildren(templates.game.content.cloneNode(true));
   renderAppMenu();
   gameState = normalizeGame(familyData?.gameArena);
@@ -927,6 +928,7 @@ function defaultGameState() {
     walls: GAME_WALLS,
     tomatoes: GAME_TOMATO_STARTS.map((tomato) => ({ ...tomato })),
     leaderboard: {},
+    hits: {},
     killLog: [],
     updatedAt: Date.now()
   };
@@ -944,6 +946,7 @@ function normalizeGame(value) {
     walls: GAME_WALLS,
     tomatoes: useCurrentMap && value?.tomatoes ? value.tomatoes : fallback.tomatoes,
     leaderboard: value?.leaderboard || {},
+    hits: value?.hits || {},
     killLog: value?.killLog || []
   };
 }
@@ -980,12 +983,21 @@ function gameTick(now) {
 function updateLocalGame(dt, now) {
   if (!currentUser?.uid || !gameLocalPlayer) return;
   const player = { ...gameLocalPlayer };
+  const incomingHit = gameState.hits?.[currentUser.uid];
+  if (incomingHit && player.alive) {
+    player.alive = false;
+    player.deadUntil = Math.max(Number(incomingHit.deadUntil) || 0, now + GAME_RESPAWN_MS);
+  }
   if (player.deadUntil && now >= player.deadUntil) {
     const spawn = randomGameSpawn();
     player.x = spawn.x;
     player.y = spawn.y;
     player.alive = true;
     player.deadUntil = 0;
+    if (gameState.hits?.[currentUser.uid]) {
+      gameState.hits = { ...(gameState.hits || {}) };
+      delete gameState.hits[currentUser.uid];
+    }
   }
 
   if (player.alive) {
@@ -1008,13 +1020,16 @@ function updateLocalGame(dt, now) {
   const tomatoes = isHost ? moveGameTomatoes(gameState.tomatoes, dt) : serverTomatoes;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
-  resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now);
+  const hits = { ...(gameState.hits || {}) };
+  const hitCountBefore = Object.keys(hits).length;
+  resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, hits, now);
   gameState = {
     ...gameState,
     players,
     projectiles,
     tomatoes,
     leaderboard,
+    hits,
     killLog: nextKillLog.slice(-20),
     walls: GAME_WALLS,
     version: GAME_VERSION,
@@ -1024,6 +1039,8 @@ function updateLocalGame(dt, now) {
   if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
     gameLastHeartbeat = now;
     syncLocalGame(now);
+  } else if (Object.keys(hits).length !== hitCountBefore) {
+    writeGameArenaSharedState(gameState);
   }
 }
 
@@ -1041,6 +1058,7 @@ async function syncLocalGame(now) {
     walls: GAME_WALLS,
     tomatoes: syncedTomatoes,
     leaderboard,
+    hits: nextGame.hits || {},
     killLog: (nextGame.killLog || []).slice(-20),
     version: GAME_VERSION,
     updatedAt: Date.now()
@@ -1088,6 +1106,7 @@ async function writeGameArenaSharedState(nextArena) {
     walls: GAME_WALLS,
     projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
+    hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
     updatedAt: Date.now()
   }).catch(() => {
@@ -1096,7 +1115,7 @@ async function writeGameArenaSharedState(nextArena) {
   });
 }
 
-function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now) {
+function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, hits, now) {
   Object.values(projectiles).forEach((shot) => {
     if (shot.ownerUid !== currentUser.uid) return;
     Object.values(players).forEach((player) => {
@@ -1104,6 +1123,12 @@ function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLo
       if (gameDistance(player.x, player.y, shot.x, shot.y) < GAME_PLAYER_SIZE) {
         player.alive = false;
         player.deadUntil = now + GAME_RESPAWN_MS;
+        hits[player.uid] = {
+          id: `${shot.id}-${player.uid}`,
+          byUid: shot.ownerUid,
+          deadUntil: player.deadUntil,
+          createdAt: now
+        };
         recordGameKill(leaderboard, nextKillLog, shot.ownerUid, player.uid, players);
         delete projectiles[shot.id];
       }
@@ -1551,6 +1576,7 @@ function hideGameArenaStatus() {
 }
 
 function cleanupGame() {
+  document.body.classList.remove("game-active");
   if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
   cleanupGameArenaListener();
   gameAnimationId = null;

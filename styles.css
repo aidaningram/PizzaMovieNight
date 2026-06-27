@@ -50,6 +50,15 @@ body {
   color: var(--ink);
 }
 
+body.game-active {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  position: fixed;
+  inset: 0;
+}
+
 button,
 input,
 select,
@@ -906,7 +915,7 @@ label {
   height: 100dvh;
   min-height: 100dvh;
   width: min(100%, 980px);
-  padding: max(8px, env(safe-area-inset-top)) 10px max(8px, env(safe-area-inset-bottom));
+  padding: max(22px, env(safe-area-inset-top)) 18px max(24px, env(safe-area-inset-bottom));
   gap: 10px;
   grid-template-rows: auto minmax(0, 1fr);
   align-content: stretch;
@@ -914,8 +923,8 @@ label {
 }
 
 .game-page .page-header {
-  position: static;
-  top: auto;
+  position: sticky;
+  top: max(10px, env(safe-area-inset-top));
 }
 
 .pizza-game-shell {
@@ -1032,6 +1041,7 @@ label {
   padding: 0 16px;
   border-radius: 8px;
   font-weight: 950;
+  touch-action: manipulation;
 }
 
 .shoot-button,
@@ -1114,6 +1124,19 @@ label {
   touch-action: none;
 }
 
+.game-active .menu-toggle,
+.game-active .menu-panel,
+.game-active .home-logo-button,
+.game-active .leaderboard-button,
+.game-active .fire-button,
+.game-active .joystick {
+  touch-action: manipulation;
+}
+
+.game-active .joystick {
+  touch-action: none;
+}
+
 .joystick-thumb {
   position: absolute;
   left: 50%;
@@ -1134,7 +1157,9 @@ label {
 
 @media (hover: none), (pointer: coarse), (max-width: 760px) {
   .game-page {
-    padding: max(6px, env(safe-area-inset-top)) 0 max(6px, env(safe-area-inset-bottom));
+    padding: max(22px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+    overscroll-behavior: none;
+    touch-action: none;
   }
 
   .game-page .page-header,
