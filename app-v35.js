@@ -40,7 +40,7 @@ const GAME_VERSION = 14;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
-const GAME_MEATBALL_SPEED_MULTIPLIER = 0.85;
+const GAME_MEATBALL_SPEED_MULTIPLIER = 0.7;
 const GAME_PIZZA_SPEED = 520;
 const GAME_PIZZA_LIFE_MS = 1300;
 const GAME_PIZZA_PROJECTILE_SIZE = 20;
@@ -1475,15 +1475,16 @@ function moveGameZombies(zombies, players, dt, now = Date.now()) {
     }
 
     nextZombie = normalizeGameZombie(nextZombie, now);
-    const target = aggroZombieIds.has(nextZombie.id) ? closestGameZombieTarget(nextZombie, players, now) : null;
-    if (target) {
-      const dx = target.x - nextZombie.x;
-      const dy = target.y - nextZombie.y;
-      const distance = Math.hypot(dx, dy) || 1;
+    const threat = closestGameZombieMeatballThreat(nextZombie, players, now);
+    const target = !threat && aggroZombieIds.has(nextZombie.id) ? closestGameZombieTarget(nextZombie, players, now) : null;
+    if (threat || target) {
+      const vector = threat
+        ? gameZombieFleeDirection(nextZombie, threat)
+        : gameZombieChaseDirection(nextZombie, target);
       nextZombie = {
         ...nextZombie,
-        vx: dx / distance,
-        vy: dy / distance
+        vx: vector.x,
+        vy: vector.y
       };
     } else if (now >= Number(nextZombie.nextTurnAt || 0)) {
       nextZombie = turnGameZombie(nextZombie, now);
@@ -1612,10 +1613,77 @@ function gameAggroZombieIds(zombies = [], players = {}, now = Date.now()) {
 
 function closestGameZombieTarget(zombie, players = {}, now = Date.now()) {
   return Object.values(players)
-    .filter((player) => player.alive && !(player.deadUntil && now < player.deadUntil))
+    .filter((player) => player.alive && player.powerup !== "meatball" && !(player.deadUntil && now < player.deadUntil))
     .map((player) => ({ player, distance: gameDistance(zombie.x, zombie.y, player.x, player.y) }))
     .filter(({ distance }) => distance <= GAME_ZOMBIE_AGGRO_RADIUS)
     .sort((a, b) => a.distance - b.distance)[0]?.player || null;
+}
+
+function closestGameZombieMeatballThreat(zombie, players = {}, now = Date.now()) {
+  return Object.values(players)
+    .filter((player) => player.alive && player.powerup === "meatball" && !(player.deadUntil && now < player.deadUntil))
+    .map((player) => ({ player, distance: gameDistance(zombie.x, zombie.y, player.x, player.y) }))
+    .filter(({ distance }) => distance <= GAME_ZOMBIE_AGGRO_RADIUS)
+    .sort((a, b) => a.distance - b.distance)[0]?.player || null;
+}
+
+function gameZombieChaseDirection(zombie, target) {
+  const direct = gameNormalizedVector(target.x - zombie.x, target.y - zombie.y);
+  if (!gameLineBlockedByWall(zombie.x, zombie.y, target.x, target.y, GAME_ZOMBIE_RADIUS + 3)) return direct;
+  return gameBestZombieDirection(zombie, direct, target, "chase");
+}
+
+function gameZombieFleeDirection(zombie, threat) {
+  const direct = gameNormalizedVector(zombie.x - threat.x, zombie.y - threat.y);
+  return gameBestZombieDirection(zombie, direct, threat, "flee");
+}
+
+function gameBestZombieDirection(zombie, preferred, focus, mode) {
+  const perpendicular = { x: -preferred.y, y: preferred.x };
+  const candidates = [
+    preferred,
+    gameNormalizedVector(preferred.x + perpendicular.x * 0.9, preferred.y + perpendicular.y * 0.9),
+    gameNormalizedVector(preferred.x - perpendicular.x * 0.9, preferred.y - perpendicular.y * 0.9),
+    perpendicular,
+    { x: -perpendicular.x, y: -perpendicular.y },
+    gameNormalizedVector(preferred.x * 0.35 + perpendicular.x, preferred.y * 0.35 + perpendicular.y),
+    gameNormalizedVector(preferred.x * 0.35 - perpendicular.x, preferred.y * 0.35 - perpendicular.y)
+  ];
+  const step = GAME_ZOMBIE_RADIUS * 2.3;
+  const ranked = candidates
+    .filter((candidate) => candidate.x || candidate.y)
+    .map((candidate) => {
+      const x = zombie.x + candidate.x * step;
+      const y = zombie.y + candidate.y * step;
+      const blocked = x < GAME_ZOMBIE_RADIUS
+        || x > GAME_ARENA.width - GAME_ZOMBIE_RADIUS
+        || y < GAME_ZOMBIE_RADIUS
+        || y > GAME_ARENA.height - GAME_ZOMBIE_RADIUS
+        || GAME_WALLS.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS, wall));
+      const distance = gameDistance(x, y, focus.x, focus.y);
+      return {
+        candidate,
+        score: (mode === "flee" ? -distance : distance) + (blocked ? 10000 : 0)
+      };
+    })
+    .sort((a, b) => a.score - b.score);
+  return ranked[0]?.candidate || preferred;
+}
+
+function gameNormalizedVector(x, y) {
+  const magnitude = Math.hypot(x, y) || 1;
+  return { x: x / magnitude, y: y / magnitude };
+}
+
+function gameLineBlockedByWall(x1, y1, x2, y2, radius = 0) {
+  const steps = Math.max(6, Math.ceil(gameDistance(x1, y1, x2, y2) / 32));
+  for (let index = 1; index < steps; index += 1) {
+    const t = index / steps;
+    const x = x1 + (x2 - x1) * t;
+    const y = y1 + (y2 - y1) * t;
+    if (GAME_WALLS.some((wall) => gameCircleRectHit(x, y, radius, wall))) return true;
+  }
+  return false;
 }
 
 function randomGameZombieSpawn(players = {}, zombies = []) {
