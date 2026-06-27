@@ -144,6 +144,7 @@ let gameMatchQueued = false;
 let gameSpectating = false;
 let gameLobbyPresenceTimer = null;
 let gameZombieImage = null;
+let gameDisconnectCleanupReady = false;
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -171,6 +172,11 @@ async function start() {
     window.addEventListener("pageshow", resetViewportPosition);
     window.addEventListener("load", resetViewportPosition);
     window.addEventListener("orientationchange", () => window.setTimeout(resetViewportPosition, 120));
+    window.addEventListener("pagehide", handleGamePageExit);
+    window.addEventListener("beforeunload", handleGamePageExit);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") handleGamePageExit();
+    });
     appStarted = true;
   }
   if ("serviceWorker" in navigator) {
@@ -919,6 +925,7 @@ function renderGamePage() {
   gameSpectating = false;
   updateGameModePanels();
   if (FIREBASE_READY && services?.rtdb) {
+    setupGameDisconnectCleanup();
     subscribeGameArena();
   } else {
     writeGameLobbyPresence("menu");
@@ -990,6 +997,10 @@ function returnGameMenu() {
 }
 
 async function leaveGamePlayer() {
+  return leaveGamePlayerWithOptions();
+}
+
+async function leaveGamePlayerWithOptions({ offline = false } = {}) {
   if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
   const arena = normalizeGame(familyData?.gameArena || gameState);
   const match = arena.match;
@@ -997,7 +1008,7 @@ async function leaveGamePlayer() {
   const patch = {
     [`players/${currentUser.uid}`]: null,
     [`match/queued/${currentUser.uid}`]: null,
-    [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
+    [`lobby/${currentUser.uid}`]: offline ? null : gameLobbyEntry(gameViewMode),
     updatedAt: Date.now()
   };
   if (leavingActiveMatch) {
@@ -1029,6 +1040,20 @@ async function leaveGamePlayer() {
     };
   }
   await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {});
+}
+
+function handleGamePageExit() {
+  if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
+  const arena = normalizeGame(familyData?.gameArena || gameState);
+  const isActiveGameRoute = routeName() === "game";
+  const isInGame = gameJoinedArena || gameMatchQueued || gameMatchParticipant(arena.match, currentUser.uid);
+  if (!isActiveGameRoute && !isInGame) return;
+  gameViewMode = "menu";
+  gameSpectating = false;
+  gameMatchQueued = false;
+  gameJoinedArena = false;
+  gameLocalPlayer = null;
+  leaveGamePlayerWithOptions({ offline: true });
 }
 
 function clearGameQueue() {
@@ -1134,6 +1159,7 @@ function updateGameModePanels() {
 
 function joinGameArena(mode = "free") {
   if (!currentUser?.uid) return;
+  setupGameDisconnectCleanup();
   gameJoinedArena = true;
   const player = createGamePlayer();
   player.mode = mode;
@@ -1169,6 +1195,7 @@ function gameLobbyEntry(mode = gameViewMode) {
 
 async function writeGameLobbyPresence(mode = gameViewMode) {
   if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
+  setupGameDisconnectCleanup();
   await services.rtdbFns.update(gameArenaRef(), {
     version: GAME_VERSION,
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(mode),
@@ -1176,8 +1203,30 @@ async function writeGameLobbyPresence(mode = gameViewMode) {
   }).catch(() => {});
 }
 
+function setupGameDisconnectCleanup() {
+  if (gameDisconnectCleanupReady || !currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
+  const disconnectPatch = {
+    [`players/${currentUser.uid}`]: null,
+    [`match/queued/${currentUser.uid}`]: null,
+    [`match/participants/${currentUser.uid}`]: null,
+    [`match/removed/${currentUser.uid}`]: true,
+    [`lobby/${currentUser.uid}`]: null,
+    updatedAt: services.rtdbFns.serverTimestamp()
+  };
+  services.rtdbFns.onDisconnect(gameArenaRef()).update(disconnectPatch).then(() => {
+    gameDisconnectCleanupReady = true;
+  }).catch(() => {});
+}
+
+function cancelGameDisconnectCleanup() {
+  if (!gameDisconnectCleanupReady || !FIREBASE_READY || !services?.rtdb) return;
+  services.rtdbFns.onDisconnect(gameArenaRef()).cancel().catch(() => {});
+  gameDisconnectCleanupReady = false;
+}
+
 async function queueGameMatch() {
   if (!currentUser?.uid) return;
+  setupGameDisconnectCleanup();
   const arena = normalizeGame(familyData?.gameArena);
   const match = arena.match;
   if (gameMatchInProgress(match) && !gameMatchParticipant(match, currentUser.uid)) return;
@@ -1243,6 +1292,7 @@ function maybeStartQueuedMatch() {
 }
 
 async function startGameMatch(contestants) {
+  setupGameDisconnectCleanup();
   const now = Date.now();
   const startsAt = now + GAME_MATCH_COUNTDOWN_MS;
   const matchId = `match-${now}`;
@@ -1726,7 +1776,9 @@ function maybeFinishGameMatch(now = Date.now()) {
   const shouldEndEarly = activeParticipants.length <= 1;
   if (!shouldEndEarly && now < Number(match.endsAt || 0)) return;
   const participantMap = match.participants || {};
-  const host = gameHostUid(Object.fromEntries(activeParticipants.map((uid) => [uid, participantMap[uid]])));
+  const host = activeParticipants.length
+    ? gameHostUid(Object.fromEntries(activeParticipants.map((uid) => [uid, participantMap[uid]])))
+    : currentUser?.uid;
   if (host !== currentUser?.uid) return;
   const finalScores = { ...(match.scores || {}) };
   const nextArena = {
@@ -3270,6 +3322,7 @@ function cleanupGame() {
     clearGameQueue();
     leaveGamePlayer();
   }
+  cancelGameDisconnectCleanup();
   document.documentElement.classList.remove("game-active-root");
   document.body.classList.remove("game-active");
   document.body.classList.remove("game-playing");
