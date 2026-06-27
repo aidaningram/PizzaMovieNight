@@ -101,6 +101,7 @@ let gameLastHeartbeat = 0;
 let gameLastShotAt = 0;
 let gameAnimationId = null;
 let gameRemoteProjectiles = {};
+let gameTouchMoveLocked = false;
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -851,7 +852,12 @@ function renderMembersList() {
 }
 
 function renderGamePage() {
+  document.documentElement.classList.add("game-active-root");
   document.body.classList.add("game-active");
+  if (!gameTouchMoveLocked) {
+    document.addEventListener("touchmove", preventGamePageDrag, { passive: false });
+    gameTouchMoveLocked = true;
+  }
   appRoot.replaceChildren(templates.game.content.cloneNode(true));
   renderAppMenu();
   gameState = normalizeGame(familyData?.gameArena);
@@ -984,7 +990,8 @@ function updateLocalGame(dt, now) {
   if (!currentUser?.uid || !gameLocalPlayer) return;
   const player = { ...gameLocalPlayer };
   const incomingHit = gameState.hits?.[currentUser.uid];
-  if (incomingHit && player.alive) {
+  const isRespawning = player.deadUntil && now < player.deadUntil;
+  if (incomingHit && player.alive && !isRespawning) {
     player.alive = false;
     player.deadUntil = Math.max(Number(incomingHit.deadUntil) || 0, now + GAME_RESPAWN_MS);
   }
@@ -1119,7 +1126,8 @@ function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLo
   Object.values(projectiles).forEach((shot) => {
     if (shot.ownerUid !== currentUser.uid) return;
     Object.values(players).forEach((player) => {
-      if (!player.alive || player.uid === shot.ownerUid) return;
+      const playerIsRespawning = player.deadUntil && now < player.deadUntil;
+      if (!player.alive || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
       if (gameDistance(player.x, player.y, shot.x, shot.y) < GAME_PLAYER_SIZE) {
         player.alive = false;
         player.deadUntil = now + GAME_RESPAWN_MS;
@@ -1136,7 +1144,8 @@ function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLo
   });
 
   Object.values(players).forEach((player) => {
-    if (player.uid !== currentUser.uid || !player.alive) return;
+    const playerIsRespawning = player.deadUntil && now < player.deadUntil;
+    if (player.uid !== currentUser.uid || !player.alive || playerIsRespawning) return;
     if (tomatoes.some((tomato) => gameDistance(player.x, player.y, tomato.x, tomato.y) < (GAME_PLAYER_SIZE + GAME_TOMATO_SIZE) / 2)) {
       player.alive = false;
       player.deadUntil = now + GAME_RESPAWN_MS;
@@ -1576,7 +1585,12 @@ function hideGameArenaStatus() {
 }
 
 function cleanupGame() {
+  document.documentElement.classList.remove("game-active-root");
   document.body.classList.remove("game-active");
+  if (gameTouchMoveLocked) {
+    document.removeEventListener("touchmove", preventGamePageDrag);
+    gameTouchMoveLocked = false;
+  }
   if (gameAnimationId) cancelAnimationFrame(gameAnimationId);
   cleanupGameArenaListener();
   gameAnimationId = null;
@@ -1587,6 +1601,10 @@ function cleanupGame() {
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
+}
+
+function preventGamePageDrag(event) {
+  if (document.body.classList.contains("game-active")) event.preventDefault();
 }
 
 function cleanupGameArenaListener() {
