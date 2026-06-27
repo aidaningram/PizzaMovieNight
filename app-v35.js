@@ -79,7 +79,7 @@ const GAME_MUSHROOM_FUSE_MS = 700;
 const GAME_MUSHROOM_SPLASH_RADIUS = 184;
 const GAME_MUSHROOM_EXPLOSION_MS = 360;
 const GAME_BASIL_FIRE_MS = 90;
-const GAME_BASIL_LIFE_MS = 620;
+const GAME_BASIL_LIFE_MS = 496;
 const GAME_MEATBALL_SIZE = 84;
 const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
@@ -954,7 +954,12 @@ function attachGameMenuControls() {
   document.querySelector("#free-play-button")?.addEventListener("click", () => enterGameFreePlay());
   document.querySelector("#start-match-button")?.addEventListener("click", () => queueGameMatch());
   document.querySelector("#spectate-button")?.addEventListener("click", () => enterGameSpectate());
-  document.querySelector("#game-back-menu-button")?.addEventListener("click", () => returnGameMenu());
+  const gameBackButton = document.querySelector("#game-back-menu-button");
+  gameBackButton?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    returnGameMenu();
+  });
+  gameBackButton?.addEventListener("click", () => returnGameMenu());
   document.querySelector("#return-game-menu-button")?.addEventListener("click", () => returnGameMenu());
   document.querySelector("#end-free-play-button")?.addEventListener("click", () => enterGameFreePlay());
 }
@@ -986,6 +991,7 @@ function enterGameSpectate() {
 }
 
 function returnGameMenu() {
+  markCurrentGameMatchExitLocally();
   gameViewMode = "menu";
   gameSpectating = false;
   clearGameQueue();
@@ -994,6 +1000,27 @@ function returnGameMenu() {
   gameJoinedArena = false;
   updateGameModePanels();
   writeGameLobbyPresence("menu");
+}
+
+function markCurrentGameMatchExitLocally() {
+  if (!currentUser?.uid) return;
+  const nextArena = normalizeGame(familyData?.gameArena || gameState);
+  const match = nextArena.match;
+  if (!gameMatchInProgress(match) || !gameMatchParticipant(match, currentUser.uid)) return;
+  const nextMatch = {
+    ...match,
+    participants: { ...(match.participants || {}) },
+    removed: { ...(match.removed || {}), [currentUser.uid]: true }
+  };
+  delete nextMatch.participants[currentUser.uid];
+  nextArena.players = { ...(nextArena.players || {}) };
+  delete nextArena.players[currentUser.uid];
+  nextArena.match = nextMatch;
+  gameState = nextArena;
+  familyData = {
+    ...familyData,
+    gameArena: nextArena
+  };
 }
 
 async function leaveGamePlayer() {
@@ -1987,7 +2014,7 @@ function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard
   addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
-    if (!player.alive || player.powerup === "meatball" || playerIsRespawning || gamePlayerShielded(player, now) || hits[player.uid] || player.uid === shot.ownerUid) return;
+    if (!player.alive || player.powerup === "meatball" || playerIsRespawning || gamePlayerShielded(player, now) || hits[player.uid]) return;
     if (gameDistance(player.x, player.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + gamePlayerHitRadius(player)) {
       killGamePlayerByUid(player.uid, shot.ownerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, shot.id);
     }
