@@ -67,7 +67,7 @@ const GAME_POWERUP_FLASH_MS = 2600;
 const GAME_RESPAWN_SHIELD_MS = 4000;
 const GAME_SHIELD_FLASH_MS = 1500;
 const GAME_MUSHROOM_FUSE_MS = 700;
-const GAME_MUSHROOM_SPLASH_RADIUS = 92;
+const GAME_MUSHROOM_SPLASH_RADIUS = 184;
 const GAME_MUSHROOM_EXPLOSION_MS = 360;
 const GAME_BASIL_FIRE_MS = 90;
 const GAME_BASIL_LIFE_MS = 620;
@@ -155,6 +155,9 @@ start().catch((error) => {
 async function start() {
   if (!appStarted) {
     window.addEventListener("hashchange", renderRoute);
+    window.addEventListener("pageshow", resetViewportPosition);
+    window.addEventListener("load", resetViewportPosition);
+    window.addEventListener("orientationchange", () => window.setTimeout(resetViewportPosition, 120));
     appStarted = true;
   }
   if ("serviceWorker" in navigator) {
@@ -244,6 +247,7 @@ function renderLogin(message = "") {
   lastFamilyRenderSignature = "";
   authMode = "signin";
   appRoot.replaceChildren(templates.login.content.cloneNode(true));
+  resetViewportPosition();
   const form = document.querySelector("#family-login-form");
   const note = document.querySelector("#login-note");
   const nameField = document.querySelector("#family-name-input");
@@ -362,6 +366,7 @@ function renderRoute() {
   else if (route === "members") renderMembersPage();
   else if (route === "game") renderGamePage();
   else renderHomePage();
+  resetViewportPosition();
   if (route !== "game") window.setTimeout(showPendingRankingPrompt, 0);
 }
 
@@ -1638,15 +1643,24 @@ function drawGameShield(ctx, player, radius, now = Date.now()) {
   ctx.arc(0, 0, radius + 10, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawGameShieldIcon(ctx, player, now = Date.now()) {
+  if (!gamePlayerShielded(player, now)) return;
+  const alpha = gameExpiringFlashAlpha(player.shieldUntil, GAME_SHIELD_FLASH_MS, now);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = "rgba(126, 231, 255, 0.72)";
+  ctx.shadowBlur = 10;
   ctx.fillStyle = "#dffaff";
   ctx.strokeStyle = "#225e70";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(0, -radius - 29);
-  ctx.lineTo(14, -radius - 23);
-  ctx.quadraticCurveTo(11, -radius - 7, 0, -radius - 1);
-  ctx.quadraticCurveTo(-11, -radius - 7, -14, -radius - 23);
+  ctx.moveTo(0, -15);
+  ctx.lineTo(15, -8);
+  ctx.quadraticCurveTo(12, 10, 0, 17);
+  ctx.quadraticCurveTo(-12, 10, -15, -8);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
@@ -2323,6 +2337,7 @@ function drawGamePlayer(ctx, player) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), 0, 1);
+    drawGameShieldIcon(ctx, player, now);
     ctx.restore();
     ctx.fillStyle = "#fff4df";
     ctx.font = "900 16px system-ui";
@@ -2398,6 +2413,7 @@ function drawGamePlayer(ctx, player) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), crustX + 7, 0.5);
+  drawGameShieldIcon(ctx, player, now);
   ctx.restore();
 
   ctx.fillStyle = "#fff4df";
@@ -3454,6 +3470,19 @@ function routeName() {
 
 function navigate(route) {
   location.hash = `#/${route}`;
+}
+
+function resetViewportPosition() {
+  window.requestAnimationFrame(() => {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.scrollTo(0, 0);
+  });
+  window.setTimeout(() => {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }, 80);
 }
 
 function renderAppMenu() {
