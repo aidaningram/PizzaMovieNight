@@ -126,6 +126,7 @@ let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
 let gameConsumedPickupIds = new Set();
+let gameJoinedArena = false;
 let gameZombieImage = null;
 
 const demoStore = {
@@ -889,8 +890,12 @@ function renderGamePage() {
   gameRemoteProjectiles = gameState.projectiles;
   attachGameControls();
   setGameStatus("Joining", false);
-  subscribeGameArena();
-  joinGameArena();
+  gameJoinedArena = false;
+  if (FIREBASE_READY && services?.rtdb) {
+    subscribeGameArena();
+  } else {
+    joinGameArena();
+  }
   if (!gameAnimationId) {
     gameLastFrame = performance.now();
     gameAnimationId = requestAnimationFrame(gameTick);
@@ -903,9 +908,9 @@ function subscribeGameArena() {
   const gameRef = gameArenaRef();
   unsubscribeGameArena = services.rtdbFns.onValue(gameRef, (snap) => {
     const nextArena = snap.val();
-    if (!nextArena) return;
     familyData = { ...familyData, gameArena: nextArena };
-    receiveGameSnapshot();
+    if (nextArena) receiveGameSnapshot();
+    if (!gameJoinedArena) joinGameArena();
   }, () => {
     setGameStatus("Error", false);
     showGameArenaStatus("Realtime Database blocked the game. Check Realtime Database rules.");
@@ -914,6 +919,7 @@ function subscribeGameArena() {
 
 function joinGameArena() {
   if (!currentUser?.uid) return;
+  gameJoinedArena = true;
   const player = createGamePlayer();
   const next = normalizeGame(familyData?.gameArena);
   const leaderboard = ensureGameLeaderboardEntry(next.leaderboard, player);
@@ -2579,6 +2585,7 @@ function cleanupGame() {
   gameConsumedHitIds = new Set();
   gameRemovedProjectileIds = new Set();
   gameConsumedPickupIds = new Set();
+  gameJoinedArena = false;
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
 }
