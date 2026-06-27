@@ -102,6 +102,7 @@ let gameLastShotAt = 0;
 let gameAnimationId = null;
 let gameRemoteProjectiles = {};
 let gameTouchMoveLocked = false;
+let gameConsumedHitIds = new Set();
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -957,6 +958,19 @@ function normalizeGame(value) {
   };
 }
 
+function gameHitId(hit, uid) {
+  return hit?.id || `${uid}-${hit?.byUid || "unknown"}-${hit?.createdAt || hit?.deadUntil || "hit"}`;
+}
+
+function pruneGameHits(hits = {}, now = Date.now()) {
+  return Object.fromEntries(Object.entries(hits).filter(([uid, hit]) => {
+    const deadUntil = Number(hit?.deadUntil || 0);
+    if (!deadUntil || deadUntil <= now) return false;
+    if (uid === currentUser?.uid && gameConsumedHitIds.has(gameHitId(hit, uid))) return false;
+    return true;
+  }));
+}
+
 function createGamePlayer() {
   const spawn = randomGameSpawn();
   return {
@@ -989,11 +1003,15 @@ function gameTick(now) {
 function updateLocalGame(dt, now) {
   if (!currentUser?.uid || !gameLocalPlayer) return;
   const player = { ...gameLocalPlayer };
-  const incomingHit = gameState.hits?.[currentUser.uid];
+  const hitCountBefore = Object.keys(gameState.hits || {}).length;
+  const hits = pruneGameHits(gameState.hits || {}, now);
+  const incomingHit = hits[currentUser.uid];
   const isRespawning = player.deadUntil && now < player.deadUntil;
   if (incomingHit && player.alive && !isRespawning) {
+    gameConsumedHitIds.add(gameHitId(incomingHit, currentUser.uid));
     player.alive = false;
-    player.deadUntil = Math.max(Number(incomingHit.deadUntil) || 0, now + GAME_RESPAWN_MS);
+    player.deadUntil = Number(incomingHit.deadUntil) || now + GAME_RESPAWN_MS;
+    delete hits[currentUser.uid];
   }
   if (player.deadUntil && now >= player.deadUntil) {
     const spawn = randomGameSpawn();
@@ -1001,10 +1019,7 @@ function updateLocalGame(dt, now) {
     player.y = spawn.y;
     player.alive = true;
     player.deadUntil = 0;
-    if (gameState.hits?.[currentUser.uid]) {
-      gameState.hits = { ...(gameState.hits || {}) };
-      delete gameState.hits[currentUser.uid];
-    }
+    delete hits[currentUser.uid];
   }
 
   if (player.alive) {
@@ -1027,8 +1042,6 @@ function updateLocalGame(dt, now) {
   const tomatoes = isHost ? moveGameTomatoes(gameState.tomatoes, dt) : serverTomatoes;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
-  const hits = { ...(gameState.hits || {}) };
-  const hitCountBefore = Object.keys(hits).length;
   resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, hits, now);
   gameState = {
     ...gameState,
@@ -1056,6 +1069,7 @@ async function syncLocalGame(now) {
   const projectiles = pruneGameProjectiles(mergeGameProjectiles(gameRemoteProjectiles, nextGame.projectiles), now);
   const players = pruneGamePlayers({ ...nextGame.players, [currentUser.uid]: gameLocalPlayer });
   const leaderboard = ensureGameLeaderboardEntry(nextGame.leaderboard, gameLocalPlayer);
+  const hits = pruneGameHits(nextGame.hits || {}, now);
   const isHost = currentUser.uid === gameHostUid(players);
   const syncedTomatoes = isHost ? nextGame.tomatoes : normalizeGame(familyData?.gameArena).tomatoes;
   const nextArena = {
@@ -1065,7 +1079,7 @@ async function syncLocalGame(now) {
     walls: GAME_WALLS,
     tomatoes: syncedTomatoes,
     leaderboard,
-    hits: nextGame.hits || {},
+    hits,
     killLog: (nextGame.killLog || []).slice(-20),
     version: GAME_VERSION,
     updatedAt: Date.now()
@@ -1599,6 +1613,7 @@ function cleanupGame() {
   gameRemoteProjectiles = {};
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
+  gameConsumedHitIds = new Set();
   window.removeEventListener("keydown", handleGameKeyDown);
   window.removeEventListener("keyup", handleGameKeyUp);
 }
