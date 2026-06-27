@@ -146,6 +146,7 @@ let gameLobbyPresenceTimer = null;
 let gameZombieImage = null;
 let gameDisconnectCleanupReady = false;
 let gameMatchExitPending = false;
+let gameBackHandledAt = 0;
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -957,11 +958,14 @@ function attachGameMenuControls() {
   document.querySelector("#start-match-button")?.addEventListener("click", () => queueGameMatch());
   document.querySelector("#spectate-button")?.addEventListener("click", () => enterGameSpectate());
   const gameBackButton = document.querySelector("#game-back-menu-button");
-  gameBackButton?.addEventListener("pointerdown", (event) => {
+  gameBackButton?.addEventListener("pointerup", (event) => {
     event.preventDefault();
     returnGameMenu();
   });
-  gameBackButton?.addEventListener("click", () => returnGameMenu());
+  gameBackButton?.addEventListener("click", (event) => {
+    event.preventDefault();
+    returnGameMenu();
+  });
   document.querySelector("#return-game-menu-button")?.addEventListener("click", () => returnGameMenu());
   document.querySelector("#end-free-play-button")?.addEventListener("click", () => enterGameFreePlay());
 }
@@ -993,6 +997,9 @@ function enterGameSpectate() {
 }
 
 function returnGameMenu() {
+  const now = Date.now();
+  if (now - gameBackHandledAt < 350) return;
+  gameBackHandledAt = now;
   const wasInActiveMatch = gameMatchParticipant(normalizeGame(familyData?.gameArena || gameState).match, currentUser?.uid);
   if (wasInActiveMatch) gameMatchExitPending = true;
   markCurrentGameMatchExitLocally();
@@ -1002,6 +1009,10 @@ function returnGameMenu() {
   leaveGamePlayerWithOptions({ forceMatchExit: wasInActiveMatch });
   gameLocalPlayer = null;
   gameJoinedArena = false;
+  if (gameAnimationId) {
+    cancelAnimationFrame(gameAnimationId);
+    gameAnimationId = null;
+  }
   updateGameModePanels();
   writeGameLobbyPresence("menu");
 }
@@ -1680,8 +1691,9 @@ function updateLocalGame(dt, now) {
   }
 
   if (gameMatchFrozen(activeMatch, now)) {
-    showGameArenaStatus(gameCountdownText(activeMatch, now));
+    showGameArenaStatus(gameMatchTimerText(activeMatch, now));
   } else if (player.alive) {
+    applyGameMatchStartShield(player, activeMatch, now);
     const vector = gameInputVector();
     if (vector.x || vector.y) {
       gameAim = vector;
@@ -1708,20 +1720,23 @@ function updateLocalGame(dt, now) {
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
   let zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, gameState.zombieDeaths), now);
-  const zombies = isHost ? moveGameZombies(gameState.zombies, players, dt, now, zombieDeaths) : applyGameZombieDeaths(serverGame.zombies, zombieDeaths);
+  const frozen = gameMatchFrozen(activeMatch, now);
+  const zombies = frozen
+    ? applyGameZombieDeaths(gameState.zombies, zombieDeaths)
+    : isHost ? moveGameZombies(gameState.zombies, players, dt, now, zombieDeaths) : applyGameZombieDeaths(serverGame.zombies, zombieDeaths);
   let collectedPickups = pruneGameTimedMap(isHost ? gameState.collectedPickups || {} : serverGame.collectedPickups || {}, now, GAME_PICKUP_CLAIM_TTL_MS);
   let pepperoniPickups = filterGameAvailablePickups(isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(serverGame.pepperoniPickups || {}) }, collectedPickups);
   let lastPepperoniSpawnAt = isHost ? Number(gameState.lastPepperoniSpawnAt || 0) : Number(serverGame.lastPepperoniSpawnAt || 0);
-  if (isHost && !gameMatchFrozen(activeMatch, now)) {
+  if (isHost && !frozen) {
     const spawned = spawnGamePepperoniPickups(pepperoniPickups, lastPepperoniSpawnAt, now);
     pepperoniPickups = spawned.pickups;
     lastPepperoniSpawnAt = spawned.lastSpawnAt;
   }
-  if (!gameMatchFrozen(activeMatch, now)) collectGameToppings(player, pepperoniPickups, collectedPickups, now);
+  if (!frozen) collectGameToppings(player, pepperoniPickups, collectedPickups, now);
   players[currentUser.uid] = player;
   const leaderboard = gameState.leaderboard || {};
   const nextKillLog = [...(gameState.killLog || [])];
-  if (!gameMatchFrozen(activeMatch, now)) resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
+  if (!frozen) resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
   gameState = {
     ...gameState,
     players,
@@ -1805,6 +1820,19 @@ function gameCountdownText(match = {}, now = Date.now()) {
   if (remaining <= 500) return "GO";
   const seconds = Math.min(3, Math.ceil((remaining - 500) / 1000));
   return seconds > 0 ? String(seconds) : "GO";
+}
+
+function gameMatchTimerText(match = {}, now = Date.now()) {
+  if (gameMatchFrozen(match, now)) return "2:00";
+  const seconds = Math.max(0, Math.ceil((Number(match.endsAt || 0) - now) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function applyGameMatchStartShield(player, match = {}, now = Date.now()) {
+  if (!player || match.status !== "active") return;
+  const startedAt = Number(match.startedAt || 0);
+  if (!startedAt || now < startedAt || now > startedAt + GAME_RESPAWN_SHIELD_MS) return;
+  player.shieldUntil = Math.max(Number(player.shieldUntil || 0), startedAt + GAME_RESPAWN_SHIELD_MS);
 }
 
 function maybeFinishGameMatch(now = Date.now()) {
@@ -2705,10 +2733,10 @@ function drawGame() {
 
   const match = gameState.match || defaultGameMatchState();
   if (gameMatchFrozen(match)) {
-    showGameArenaStatus(gameCountdownText(match));
+    showGameArenaStatus(gameMatchTimerText(match));
+    drawGameCountdownOverlay(ctx, gameCountdownText(match));
   } else if (match.status === "active") {
-    const seconds = Math.max(0, Math.ceil((Number(match.endsAt || 0) - Date.now()) / 1000));
-    showGameArenaStatus(`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`);
+    showGameArenaStatus(gameMatchTimerText(match));
   } else if (match.status === "ended") {
     showGameArenaStatus("Match complete");
     updateGameModePanels();
@@ -2718,6 +2746,24 @@ function drawGame() {
     hideGameArenaStatus();
   }
   renderMatchLeaderboard();
+}
+
+function drawGameCountdownOverlay(ctx, text) {
+  if (!text) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(17, 16, 25, 0.24)";
+  ctx.fillRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
+  ctx.font = "950 150px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 12;
+  ctx.strokeStyle = "rgba(17, 16, 25, 0.72)";
+  ctx.fillStyle = "#fff7ea";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = 18;
+  ctx.strokeText(text, GAME_ARENA.width / 2, GAME_ARENA.height / 2);
+  ctx.fillText(text, GAME_ARENA.width / 2, GAME_ARENA.height / 2);
+  ctx.restore();
 }
 
 function updateGameVisualPlayers(dt) {
