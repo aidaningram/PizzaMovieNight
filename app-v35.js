@@ -907,6 +907,7 @@ function renderGamePage() {
   }
   appRoot.replaceChildren(templates.game.content.cloneNode(true));
   renderAppMenu();
+  renderGameRuleIcons();
   gameState = normalizeGame(familyData?.gameArena);
   gameRemoteProjectiles = gameState.projectiles;
   attachGameMenuControls();
@@ -2732,6 +2733,49 @@ function drawGameTopping(ctx, type, x, y, radius, lineWidth = 2) {
     return;
   }
   drawGamePepperoniDisk(ctx, x, y, radius, lineWidth);
+}
+
+function renderGameRuleIcons() {
+  document.querySelectorAll("[data-rule-icon]").forEach((canvas) => {
+    const ctx = canvas.getContext("2d");
+    const type = canvas.dataset.ruleIcon;
+    const size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.translate(size / 2, size / 2);
+    if (type === "zombie") {
+      drawGameZombie(ctx, { x: 0, y: 0, vx: 1, facing: 1, alive: true });
+      const image = getGameZombieImage();
+      image.onload = () => renderGameRuleIcons();
+    } else if (type === "match") {
+      drawGameMatchIcon(ctx, size);
+    } else {
+      ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 3;
+      drawGameTopping(ctx, type, 0, 0, size * 0.26, 4);
+    }
+    ctx.restore();
+  });
+}
+
+function drawGameMatchIcon(ctx, size) {
+  const radius = size * 0.26;
+  const gradient = ctx.createLinearGradient(-radius, -radius, radius, radius);
+  gradient.addColorStop(0, "#e85d75");
+  gradient.addColorStop(1, "#f4a261");
+  ctx.fillStyle = gradient;
+  ctx.strokeStyle = "#111019";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#111019";
+  ctx.font = "900 15px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("XP", 0, 1);
 }
 
 function drawGamePepperoniDisk(ctx, x, y, radius, lineWidth = 2) {

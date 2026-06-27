@@ -1046,81 +1046,12 @@ label {
 }
 
 .rule-icon {
-  position: relative;
-  display: inline-block;
+  display: block;
   width: 28px;
   height: 28px;
   border-radius: 999px;
-  border: 2px solid rgba(17, 16, 25, 0.72);
+  background: rgba(17, 16, 25, 0.35);
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
-}
-
-.pepperoni-icon {
-  background: radial-gradient(circle at 35% 35%, #ff7f51 0 10%, transparent 12%),
-    radial-gradient(circle at 66% 62%, #8c1d18 0 9%, transparent 11%),
-    #e5392f;
-}
-
-.mushroom-icon {
-  border-radius: 12px 12px 999px 999px;
-  background: linear-gradient(#f4eee5 0 42%, #caa892 43% 100%);
-}
-
-.mushroom-icon::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  top: 12px;
-  width: 10px;
-  height: 13px;
-  border-radius: 4px;
-  background: #f8efe0;
-}
-
-.basil-icon {
-  border-radius: 999px 999px 999px 4px;
-  background: linear-gradient(135deg, #55c97a, #1e8b55);
-  transform: rotate(-35deg);
-}
-
-.meatball-icon {
-  background: radial-gradient(circle at 34% 30%, rgba(255, 244, 223, 0.32), transparent 18%), #8f3b2f;
-}
-
-.zombie-icon {
-  background: radial-gradient(circle at 68% 18%, #f06ca8 0 13%, transparent 14%), #66d66f;
-}
-
-.zombie-icon::before,
-.zombie-icon::after {
-  content: "";
-  position: absolute;
-  top: 11px;
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  background: #111019;
-}
-
-.zombie-icon::before {
-  left: 8px;
-}
-
-.zombie-icon::after {
-  right: 8px;
-}
-
-.match-icon {
-  display: grid;
-  place-items: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-}
-
-.match-icon::after {
-  content: "XP";
-  color: #111019;
-  font-size: 0.55rem;
-  font-weight: 950;
 }
 
 .game-menu-actions {
