@@ -50,6 +50,8 @@ const GAME_TOMATO_TURN_MIN_MS = 550;
 const GAME_TOMATO_TURN_MAX_MS = 1700;
 const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
+const GAME_REMOTE_PLAYER_SMOOTHING = 18;
+const GAME_REMOTE_PLAYER_SNAP_DISTANCE = 180;
 const GAME_WALLS = [
   { x: 0, y: 0, w: 960, h: 24 },
   { x: 0, y: 1096, w: 960, h: 24 },
@@ -97,6 +99,7 @@ let gameLastHeartbeat = 0;
 let gameLastShotAt = 0;
 let gameAnimationId = null;
 let gameRemoteProjectiles = {};
+let gameVisualPlayers = {};
 let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
@@ -993,6 +996,7 @@ function gameTick(now) {
   const dt = Math.min(0.04, (now - gameLastFrame) / 1000);
   gameLastFrame = now;
   updateLocalGame(dt, Date.now());
+  updateGameVisualPlayers(dt);
   drawGame();
   gameAnimationId = requestAnimationFrame(gameTick);
 }
@@ -1351,7 +1355,7 @@ function drawGame() {
   gameState.walls.forEach((wall) => drawGameWall(ctx, wall));
   gameState.tomatoes.forEach((tomato) => drawGameTomato(ctx, tomato));
   Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
-  Object.values(gameState.players).forEach((player) => drawGamePlayer(ctx, player));
+  Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
   if (gameLocalPlayer && !gameLocalPlayer.alive) {
     showGameArenaStatus("Respawning...");
@@ -1359,6 +1363,42 @@ function drawGame() {
     hideGameArenaStatus();
   }
   if (!document.querySelector("#leaderboard-panel")?.hidden) renderGameLeaderboard();
+}
+
+function updateGameVisualPlayers(dt) {
+  if (!gameState?.players) {
+    gameVisualPlayers = {};
+    return;
+  }
+  const smoothing = 1 - Math.exp(-GAME_REMOTE_PLAYER_SMOOTHING * dt);
+  const nextVisualPlayers = {};
+  Object.entries(gameState.players).forEach(([uid, target]) => {
+    if (uid === currentUser?.uid) {
+      nextVisualPlayers[uid] = { ...target };
+      return;
+    }
+    const previous = gameVisualPlayers[uid];
+    const shouldSnap = !previous
+      || previous.alive !== target.alive
+      || Math.abs(Number(previous.deadUntil || 0) - Number(target.deadUntil || 0)) > 250
+      || gameDistance(previous.x, previous.y, target.x, target.y) > GAME_REMOTE_PLAYER_SNAP_DISTANCE;
+    if (shouldSnap) {
+      nextVisualPlayers[uid] = { ...target };
+      return;
+    }
+    const previousAimX = Number(previous.aimX || 1);
+    const previousAimY = Number(previous.aimY || 0);
+    const targetAimX = Number(target.aimX || previousAimX);
+    const targetAimY = Number(target.aimY || previousAimY);
+    nextVisualPlayers[uid] = {
+      ...target,
+      x: previous.x + (target.x - previous.x) * smoothing,
+      y: previous.y + (target.y - previous.y) * smoothing,
+      aimX: previousAimX + (targetAimX - previousAimX) * smoothing,
+      aimY: previousAimY + (targetAimY - previousAimY) * smoothing
+    };
+  });
+  gameVisualPlayers = nextVisualPlayers;
 }
 
 function renderGameLeaderboard() {
@@ -1647,6 +1687,7 @@ function cleanupGame() {
   gameState = null;
   gameLocalPlayer = null;
   gameRemoteProjectiles = {};
+  gameVisualPlayers = {};
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
   gameConsumedHitIds = new Set();
