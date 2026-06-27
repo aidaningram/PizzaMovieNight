@@ -47,7 +47,7 @@ const GAME_TOMATO_SIZE = 26;
 const GAME_TOMATO_SPEED = 95;
 const GAME_TOMATO_TURN_MIN_MS = 550;
 const GAME_TOMATO_TURN_MAX_MS = 1700;
-const GAME_HEARTBEAT_MS = 90;
+const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_WALLS = [
   { x: 0, y: 0, w: 960, h: 24 },
@@ -909,10 +909,11 @@ function receiveGameSnapshot() {
   };
   gameRemoteProjectiles = remoteGame.projectiles;
   const localTomatoes = gameState?.version === GAME_VERSION && gameState?.tomatoes?.length ? gameState.tomatoes : null;
+  const shouldKeepLocalTomatoes = currentUser?.uid === gameHostUid(players) && localTomatoes;
   gameState = {
     ...remoteGame,
     players,
-    tomatoes: localTomatoes || remoteGame.tomatoes,
+    tomatoes: shouldKeepLocalTomatoes ? localTomatoes : remoteGame.tomatoes,
     projectiles: mergeGameProjectiles(remoteGame.projectiles, gameState?.projectiles || {})
   };
   gameLocalPlayer = ownPlayer;
@@ -1002,7 +1003,9 @@ function updateLocalGame(dt, now) {
   player.lastSeen = now;
   const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
-  const tomatoes = moveGameTomatoes(gameState.tomatoes, dt);
+  const isHost = currentUser.uid === gameHostUid(players);
+  const serverTomatoes = normalizeGame(familyData?.gameArena).tomatoes;
+  const tomatoes = isHost ? moveGameTomatoes(gameState.tomatoes, dt) : serverTomatoes;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
   resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, now);
