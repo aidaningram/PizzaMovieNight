@@ -1505,39 +1505,49 @@ function drawGamePlayer(ctx, player) {
   ctx.translate(player.x, player.y);
   ctx.rotate(facingAngle);
 
+  const tipX = radius;
+  const crustX = -radius + 8;
+  const crustTop = -radius * 0.62;
+  const crustBottom = radius * 0.62;
+
   ctx.fillStyle = "#ffcc3d";
   ctx.strokeStyle = "#5b2b17";
   ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.moveTo(radius, 0);
-  ctx.lineTo(-radius + 8, -radius * 0.72);
-  ctx.quadraticCurveTo(-radius - 7, 0, -radius + 8, radius * 0.72);
+  ctx.moveTo(tipX, 0);
+  ctx.lineTo(crustX, crustTop);
+  ctx.quadraticCurveTo(crustX - 9, 0, crustX, crustBottom);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#d94a22";
-  ctx.strokeStyle = "#7a2214";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-radius + 11, -radius * 0.55);
-  ctx.quadraticCurveTo(-radius - 2, 0, -radius + 11, radius * 0.55);
-  ctx.stroke();
-
   ctx.fillStyle = "#b96a22";
   ctx.strokeStyle = "#5b2b17";
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(-radius + 5, 0, radius * 0.68, Math.PI * 0.63, Math.PI * 1.37);
+  ctx.moveTo(crustX + 2, crustTop + 3);
+  ctx.quadraticCurveTo(crustX - 10, 0, crustX + 2, crustBottom - 3);
+  ctx.quadraticCurveTo(crustX + 14, crustBottom - 9, crustX + 12, crustBottom - 18);
+  ctx.quadraticCurveTo(crustX + 5, 0, crustX + 12, crustTop + 18);
+  ctx.quadraticCurveTo(crustX + 14, crustTop + 9, crustX + 2, crustTop + 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255, 244, 223, 0.45)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-8, -15);
+  ctx.quadraticCurveTo(12, -9, 24, -2);
   ctx.stroke();
 
   ctx.fillStyle = "#d93d3d";
   ctx.strokeStyle = "#7a1721";
   ctx.lineWidth = 2;
   [
-    { x: -13, y: -11, r: 8 },
-    { x: 4, y: 12, r: 7 },
-    { x: -25, y: 16, r: 6 }
+    { x: -12, y: -9, r: 7 },
+    { x: 7, y: 11, r: 6 },
+    { x: 20, y: -5, r: 5 }
   ].forEach((pepperoni) => {
     ctx.beginPath();
     ctx.arc(pepperoni.x, pepperoni.y, pepperoni.r, 0, Math.PI * 2);
@@ -1547,14 +1557,14 @@ function drawGamePlayer(ctx, player) {
 
   ctx.fillStyle = player.color;
   ctx.beginPath();
-  ctx.arc(-radius + 8, 0, 9, 0, Math.PI * 2);
+  ctx.arc(crustX + 7, 0, 8, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.fillStyle = "#111019";
-  ctx.font = "900 14px system-ui";
+  ctx.font = "900 12px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), -radius + 8, 0.5);
+  ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), crustX + 7, 0.5);
   ctx.restore();
 
   ctx.fillStyle = "#fff4df";
