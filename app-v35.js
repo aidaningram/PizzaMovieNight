@@ -1168,7 +1168,7 @@ function updateGameModePanels() {
   const everyoneQueued = active.length > 1 && queuedCount === active.length;
   const canQueue = active.length > 1 && !inProgress && match.status !== "ended";
 
-  const showPlay = gameViewMode !== "menu" || (inProgress && isParticipant);
+  const showPlay = gameViewMode !== "menu";
   document.body.classList.toggle("game-playing", showPlay);
   if (menuPanel) menuPanel.hidden = showPlay;
   if (playPanel) playPanel.hidden = !showPlay;
@@ -1412,6 +1412,7 @@ function syncGameViewWithMatch(remoteGame) {
       return;
     }
   }
+  if (gameViewMode === "menu") return;
   if (gameMatchInProgress(match) && match.removed?.[currentUser?.uid]) {
     if (gameViewMode === "menu") return;
     gameViewMode = "spectate";
@@ -1655,8 +1656,11 @@ function gameTick(now) {
 function updateLocalGame(dt, now) {
   if (!currentUser?.uid || !gameLocalPlayer) return;
   const activeMatch = gameState?.match || defaultGameMatchState();
-  if (activeMatch.status === "active" && now >= Number(activeMatch.endsAt || 0)) {
+  if (activeMatch.status === "active") {
     maybeFinishGameMatch(now);
+    if (gameState?.match?.status === "ended") return;
+  }
+  if (activeMatch.status === "active" && now >= Number(activeMatch.endsAt || 0)) {
     return;
   }
   const player = { ...gameLocalPlayer };
@@ -1839,7 +1843,8 @@ function maybeFinishGameMatch(now = Date.now()) {
   const arena = normalizeGame(gameState || familyData?.gameArena);
   const match = arena.match;
   if (match.status !== "active") return;
-  const activeParticipants = activeGameMatchParticipants(match);
+  const activePlayers = pruneGamePlayers(arena.players || {});
+  const activeParticipants = activeGameMatchParticipants(match, activePlayers);
   const shouldEndEarly = activeParticipants.length <= 1;
   if (!shouldEndEarly && now < Number(match.endsAt || 0)) return;
   const participantMap = match.participants || {};
@@ -1864,8 +1869,8 @@ function maybeFinishGameMatch(now = Date.now()) {
   updateGameModePanels();
 }
 
-function activeGameMatchParticipants(match = {}) {
-  return Object.keys(match.participants || {}).filter((uid) => !match.removed?.[uid]);
+function activeGameMatchParticipants(match = {}, players = null) {
+  return Object.keys(match.participants || {}).filter((uid) => !match.removed?.[uid] && (!players || players[uid]));
 }
 
 function normalizeMatchScores(scores = {}, participants = {}) {
