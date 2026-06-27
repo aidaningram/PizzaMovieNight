@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 10;
+const GAME_VERSION = 11;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -48,6 +48,10 @@ const GAME_TOMATO_SIZE = 26;
 const GAME_TOMATO_SPEED = 95;
 const GAME_TOMATO_TURN_MIN_MS = 550;
 const GAME_TOMATO_TURN_MAX_MS = 1700;
+const GAME_PEPPERONI_PICKUP_SIZE = 22;
+const GAME_MAX_MAP_PEPPERONI = 15;
+const GAME_MAX_PLAYER_PEPPERONI = 10;
+const GAME_PEPPERONI_SPAWN_MS = 4000;
 const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_REMOTE_PLAYER_SMOOTHING = 18;
@@ -934,6 +938,8 @@ function defaultGameState() {
     projectiles: {},
     walls: GAME_WALLS,
     tomatoes: GAME_TOMATO_STARTS.map((tomato) => ({ ...tomato })),
+    pepperoniPickups: {},
+    lastPepperoniSpawnAt: Date.now() - GAME_PEPPERONI_SPAWN_MS,
     leaderboard: {},
     hits: {},
     killLog: [],
@@ -952,6 +958,8 @@ function normalizeGame(value) {
     projectiles: value?.projectiles || {},
     walls: GAME_WALLS,
     tomatoes: useCurrentMap && value?.tomatoes ? value.tomatoes : fallback.tomatoes,
+    pepperoniPickups: useCurrentMap && value?.pepperoniPickups ? value.pepperoniPickups : fallback.pepperoniPickups,
+    lastPepperoniSpawnAt: useCurrentMap ? Number(value?.lastPepperoniSpawnAt || fallback.lastPepperoniSpawnAt) : fallback.lastPepperoniSpawnAt,
     leaderboard: value?.leaderboard || {},
     hits: value?.hits || {},
     killLog: value?.killLog || []
@@ -981,6 +989,7 @@ function createGamePlayer() {
     y: spawn.y,
     aimX: 1,
     aimY: 0,
+    pepperoniCount: 0,
     alive: true,
     deadUntil: 0,
     lastSeen: Date.now()
@@ -1037,11 +1046,21 @@ function updateLocalGame(dt, now) {
 
   player.lastSeen = now;
   const projectileCountBefore = Object.keys(gameState.projectiles || {}).length;
+  const pepperoniCountBefore = Object.keys(gameState.pepperoniPickups || {}).length;
   const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
   const serverTomatoes = normalizeGame(familyData?.gameArena).tomatoes;
   const tomatoes = isHost ? moveGameTomatoes(gameState.tomatoes, dt) : serverTomatoes;
+  let pepperoniPickups = isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(normalizeGame(familyData?.gameArena).pepperoniPickups || {}) };
+  let lastPepperoniSpawnAt = isHost ? Number(gameState.lastPepperoniSpawnAt || 0) : Number(normalizeGame(familyData?.gameArena).lastPepperoniSpawnAt || 0);
+  if (isHost) {
+    const spawned = spawnGamePepperoniPickups(pepperoniPickups, lastPepperoniSpawnAt, now);
+    pepperoniPickups = spawned.pickups;
+    lastPepperoniSpawnAt = spawned.lastSpawnAt;
+  }
+  collectGamePepperoni(player, pepperoniPickups);
+  players[currentUser.uid] = player;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
   resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, hits, now);
@@ -1050,6 +1069,8 @@ function updateLocalGame(dt, now) {
     players,
     projectiles,
     tomatoes,
+    pepperoniPickups,
+    lastPepperoniSpawnAt,
     leaderboard,
     hits,
     killLog: nextKillLog.slice(-20),
@@ -1058,10 +1079,14 @@ function updateLocalGame(dt, now) {
     updatedAt: now
   };
   gameLocalPlayer = gameState.players[currentUser.uid];
+  const sharedArenaChanged = Object.keys(hits).length !== hitCountBefore
+    || Object.keys(projectiles).length !== projectileCountBefore
+    || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore;
   if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
     gameLastHeartbeat = now;
     syncLocalGame(now);
-  } else if (Object.keys(hits).length !== hitCountBefore || Object.keys(projectiles).length !== projectileCountBefore) {
+  }
+  if (sharedArenaChanged) {
     writeGameArenaSharedState(gameState);
   }
 }
@@ -1074,12 +1099,16 @@ async function syncLocalGame(now) {
   const hits = pruneGameHits(nextGame.hits || {}, now);
   const isHost = currentUser.uid === gameHostUid(players);
   const syncedTomatoes = isHost ? nextGame.tomatoes : normalizeGame(familyData?.gameArena).tomatoes;
+  const syncedPepperoniPickups = isHost ? nextGame.pepperoniPickups : normalizeGame(familyData?.gameArena).pepperoniPickups;
+  const syncedLastPepperoniSpawnAt = isHost ? nextGame.lastPepperoniSpawnAt : normalizeGame(familyData?.gameArena).lastPepperoniSpawnAt;
   const nextArena = {
     ...nextGame,
     players,
     projectiles,
     walls: GAME_WALLS,
     tomatoes: syncedTomatoes,
+    pepperoniPickups: syncedPepperoniPickups || {},
+    lastPepperoniSpawnAt: Number(syncedLastPepperoniSpawnAt || 0),
     leaderboard,
     hits,
     killLog: (nextGame.killLog || []).slice(-20),
@@ -1111,6 +1140,8 @@ async function writeGameArena(nextArena) {
   });
   if (isHost || !existingTomatoes) {
     patch.tomatoes = nextArena.tomatoes || GAME_TOMATO_STARTS;
+    patch.pepperoniPickups = Object.keys(nextArena.pepperoniPickups || {}).length ? nextArena.pepperoniPickups : null;
+    patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
   }
 
   await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {
@@ -1128,6 +1159,8 @@ async function writeGameArenaSharedState(nextArena) {
     version: GAME_VERSION,
     walls: GAME_WALLS,
     projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
+    pepperoniPickups: Object.keys(nextArena.pepperoniPickups || {}).length ? nextArena.pepperoniPickups : null,
+    lastPepperoniSpawnAt: Number(nextArena.lastPepperoniSpawnAt || 0),
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
@@ -1206,6 +1239,45 @@ function recordGameKill(leaderboard, nextKillLog, killerUid, victimUid, players)
 
 function gameHostUid(players = {}) {
   return Object.keys(players).sort()[0] || currentUser?.uid || "";
+}
+
+function spawnGamePepperoniPickups(pickups = {}, lastSpawnAt = 0, now = Date.now()) {
+  const nextPickups = { ...(pickups || {}) };
+  let nextLastSpawnAt = Number(lastSpawnAt || 0);
+  if (Object.keys(nextPickups).length >= GAME_MAX_MAP_PEPPERONI || now - nextLastSpawnAt < GAME_PEPPERONI_SPAWN_MS) {
+    return { pickups: nextPickups, lastSpawnAt: nextLastSpawnAt || now };
+  }
+  const spawn = randomGamePepperoniSpawn(nextPickups);
+  if (!spawn) return { pickups: nextPickups, lastSpawnAt: now };
+  const id = `pepperoni-${now}-${Math.floor(Math.random() * 100000)}`;
+  nextPickups[id] = { id, x: spawn.x, y: spawn.y, createdAt: now };
+  return { pickups: nextPickups, lastSpawnAt: now };
+}
+
+function randomGamePepperoniSpawn(existingPickups = {}) {
+  const radius = GAME_PEPPERONI_PICKUP_SIZE / 2;
+  const state = gameState || normalizeGame(familyData?.gameArena);
+  for (let attempt = 0; attempt < 70; attempt += 1) {
+    const x = radius + 28 + Math.random() * (GAME_ARENA.width - (radius + 28) * 2);
+    const y = radius + 28 + Math.random() * (GAME_ARENA.height - (radius + 28) * 2);
+    const blocked = state.walls.some((wall) => gameCircleRectHit(x, y, radius + 6, wall))
+      || (state.tomatoes || []).some((tomato) => gameDistance(x, y, tomato.x, tomato.y) < 58)
+      || Object.values(state.players || {}).some((player) => gameDistance(x, y, player.x, player.y) < GAME_PLAYER_SIZE)
+      || Object.values(existingPickups || {}).some((pickup) => gameDistance(x, y, pickup.x, pickup.y) < 44);
+    if (!blocked) return { x, y };
+  }
+  return null;
+}
+
+function collectGamePepperoni(player, pickups) {
+  if (!player?.alive || Number(player.pepperoniCount || 0) >= GAME_MAX_PLAYER_PEPPERONI) return;
+  Object.values(pickups || {}).forEach((pickup) => {
+    if (Number(player.pepperoniCount || 0) >= GAME_MAX_PLAYER_PEPPERONI) return;
+    if (gameDistance(player.x, player.y, pickup.x, pickup.y) <= GAME_PLAYER_SIZE / 2 + GAME_PEPPERONI_PICKUP_SIZE / 2) {
+      player.pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0) + 1);
+      delete pickups[pickup.id];
+    }
+  });
 }
 
 function moveGameTomatoes(tomatoes, dt) {
@@ -1342,8 +1414,12 @@ function mergeGameProjectiles(remote = {}, local = {}) {
 
 function shootGamePizza() {
   const now = Date.now();
-  if (!currentUser?.uid || !gameLocalPlayer?.alive || now - gameLastShotAt < 430) return;
+  if (!currentUser?.uid || !gameLocalPlayer?.alive || now - gameLastShotAt < 430 || Number(gameLocalPlayer.pepperoniCount || 0) <= 0) return;
   gameLastShotAt = now;
+  gameLocalPlayer = {
+    ...gameLocalPlayer,
+    pepperoniCount: Math.max(0, Number(gameLocalPlayer.pepperoniCount || 0) - 1)
+  };
   const shotId = `${currentUser.uid}-${now}`;
   const mag = Math.hypot(gameAim.x, gameAim.y) || 1;
   const shotOffset = GAME_PLAYER_SIZE / 2 + 12;
@@ -1360,6 +1436,10 @@ function shootGamePizza() {
   gameState.projectiles = {
     ...gameState.projectiles,
     [shotId]: shot
+  };
+  gameState.players = {
+    ...gameState.players,
+    [currentUser.uid]: gameLocalPlayer
   };
   gameRemoteProjectiles = {
     ...gameRemoteProjectiles,
@@ -1381,6 +1461,7 @@ function drawGame() {
   drawGameGrid(ctx);
   gameState.walls.forEach((wall) => drawGameWall(ctx, wall));
   gameState.tomatoes.forEach((tomato) => drawGameTomato(ctx, tomato));
+  Object.values(gameState.pepperoniPickups || {}).forEach((pickup) => drawGamePepperoniPickup(ctx, pickup));
   Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
@@ -1494,6 +1575,42 @@ function drawGameTomato(ctx, tomato) {
   ctx.restore();
 }
 
+function drawGamePepperoniPickup(ctx, pickup) {
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 3;
+  drawGamePepperoniDisk(ctx, pickup.x, pickup.y, GAME_PEPPERONI_PICKUP_SIZE / 2, 2);
+  ctx.restore();
+}
+
+function drawGamePepperoniDisk(ctx, x, y, radius, lineWidth = 2) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "#d93d3d";
+  ctx.strokeStyle = "#7a1721";
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "rgba(91, 20, 16, 0.45)";
+  [
+    { x: -radius * 0.32, y: -radius * 0.28, r: radius * 0.18 },
+    { x: radius * 0.35, y: radius * 0.1, r: radius * 0.15 },
+    { x: -radius * 0.04, y: radius * 0.48, r: radius * 0.13 }
+  ].forEach((spot) => {
+    ctx.beginPath();
+    ctx.arc(spot.x, spot.y, spot.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "rgba(255, 244, 223, 0.55)";
+  ctx.beginPath();
+  ctx.arc(-radius * 0.28, -radius * 0.36, radius * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawGamePlayer(ctx, player) {
   const radius = GAME_PLAYER_SIZE / 2;
   const aimX = Number(player.aimX || 1);
@@ -1541,19 +1658,20 @@ function drawGamePlayer(ctx, player) {
   ctx.quadraticCurveTo(12, -9, 24, -2);
   ctx.stroke();
 
-  ctx.fillStyle = "#d93d3d";
-  ctx.strokeStyle = "#7a1721";
-  ctx.lineWidth = 2;
-  [
+  const pepperoniSpots = [
     { x: -12, y: -9, r: 7 },
     { x: 7, y: 11, r: 6 },
-    { x: 20, y: -5, r: 5 }
-  ].forEach((pepperoni) => {
-    ctx.beginPath();
-    ctx.arc(pepperoni.x, pepperoni.y, pepperoni.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  });
+    { x: 20, y: -5, r: 5 },
+    { x: -24, y: 12, r: 5 },
+    { x: 0, y: -21, r: 5 },
+    { x: 27, y: 9, r: 4.5 }
+  ];
+  const pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
+  for (let index = 0; index < pepperoniCount; index += 1) {
+    const spot = pepperoniSpots[index % pepperoniSpots.length];
+    const stack = Math.floor(index / pepperoniSpots.length);
+    drawGamePepperoniDisk(ctx, spot.x + stack * 3, spot.y - stack * 3, Math.max(3.5, spot.r - stack * 1.2), 1.7);
+  }
 
   ctx.fillStyle = player.color;
   ctx.beginPath();
@@ -1576,26 +1694,7 @@ function drawGamePlayer(ctx, player) {
 }
 
 function drawGamePizzaShot(ctx, shot) {
-  ctx.save();
-  ctx.translate(shot.x, shot.y);
-  ctx.fillStyle = "#d93d3d";
-  ctx.strokeStyle = "#7a1721";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(0, 0, 10, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "rgba(91, 20, 16, 0.45)";
-  ctx.beginPath();
-  ctx.arc(-3, -3, 2, 0, Math.PI * 2);
-  ctx.arc(4, 1, 1.7, 0, Math.PI * 2);
-  ctx.arc(-1, 5, 1.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(255, 244, 223, 0.55)";
-  ctx.beginPath();
-  ctx.arc(-3, -4, 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  drawGamePepperoniDisk(ctx, shot.x, shot.y, 10, 3);
 }
 
 function randomGameSpawn() {
