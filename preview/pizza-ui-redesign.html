@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pizza Theme Preview</title>
+    <link rel="stylesheet" href="pizza-ui-redesign.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <button class="home-logo-button" type="button" aria-label="Go home">
+          <img src="assets/pizza-logo.png" alt="" />
+        </button>
+        <div class="family-title">The Ingram Family</div>
+        <button class="menu-toggle" type="button" aria-label="Open menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </header>
+
+      <section class="welcome-panel">
+        <p class="eyebrow">Pizza movie night</p>
+        <h1>Welcome Aidan to the home of pizza movie night</h1>
+        <div class="home-actions">
+          <button class="primary-action" type="button">Go to wheel</button>
+          <button class="secondary-action" type="button">Movie List</button>
+          <button class="secondary-action" type="button">Find Movies</button>
+          <button class="secondary-action" type="button">Rankings</button>
+          <button class="secondary-action" type="button">Pizza Arena</button>
+        </div>
+      </section>
+
+      <section class="wheel-page-stage">
+        <div class="wheel-canvas-preview" aria-label="Current movie wheel preview">
+          <div class="wheel-name name-one">Paddington 2</div>
+          <div class="wheel-name name-two">School of Rock</div>
+          <div class="wheel-name name-three">The Goonies</div>
+          <div class="wheel-name name-four">Clue</div>
+          <div class="wheel-hub">
+            <img src="assets/pizza-logo.png" alt="" />
+          </div>
+        </div>
+        <div class="wheel-pointer" aria-hidden="true"></div>
+        <button class="spin-button" type="button">Spin</button>
+      </section>
+
+      <section class="spin-status">
+        <strong>3 of 5 ready</strong>
+        <span>Waiting for the rest of the family.</span>
+      </section>
+
+      <section class="winner-panel">
+        <p class="eyebrow">Tonight's pick</p>
+        <h2>The Goonies</h2>
+        <p>Picked from the current wheel.</p>
+        <button class="primary-action" type="button">Remove from wheel</button>
+      </section>
+
+      <section class="panel form-stack">
+        <p class="eyebrow">Future Picks</p>
+        <h2>Movie List</h2>
+        <label>
+          Movie title
+          <input placeholder="Add a future movie" />
+        </label>
+        <button class="primary-action" type="button">Add to Movie List</button>
+      </section>
+
+      <section class="movie-list">
+        <article class="movie-list-card">
+          <div>
+            <h3>Fantastic Mr. Fox</h3>
+            <p>Added by Aidan</p>
+          </div>
+          <button class="remove-button" type="button" aria-label="Remove movie">×</button>
+        </article>
+        <article class="movie-list-card">
+          <div>
+            <h3>Spider-Man: Into the Spider-Verse</h3>
+            <p>Future pick</p>
+          </div>
+          <button class="remove-button" type="button" aria-label="Remove movie">×</button>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1502,34 +1502,65 @@ function drawGamePlayer(ctx, player) {
   const facingAngle = Math.atan2(aimY / aimMag, aimX / aimMag);
   ctx.save();
   ctx.globalAlpha = player.alive ? 1 : 0.35;
-  ctx.fillStyle = player.color;
-  ctx.strokeStyle = "#fff4df";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.save();
   ctx.translate(player.x, player.y);
   ctx.rotate(facingAngle);
-  ctx.fillStyle = "#fff4df";
-  ctx.strokeStyle = "#111019";
-  ctx.lineWidth = 3;
+
+  ctx.fillStyle = "#ffcc3d";
+  ctx.strokeStyle = "#5b2b17";
+  ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.moveTo(radius + 18, 0);
-  ctx.lineTo(radius + 2, -10);
-  ctx.lineTo(radius + 2, 10);
+  ctx.moveTo(radius, 0);
+  ctx.lineTo(-radius + 8, -radius * 0.72);
+  ctx.quadraticCurveTo(-radius - 7, 0, -radius + 8, radius * 0.72);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.restore();
+
+  ctx.fillStyle = "#d94a22";
+  ctx.strokeStyle = "#7a2214";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-radius + 11, -radius * 0.55);
+  ctx.quadraticCurveTo(-radius - 2, 0, -radius + 11, radius * 0.55);
+  ctx.stroke();
+
+  ctx.fillStyle = "#b96a22";
+  ctx.strokeStyle = "#5b2b17";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(-radius + 5, 0, radius * 0.68, Math.PI * 0.63, Math.PI * 1.37);
+  ctx.stroke();
+
+  ctx.fillStyle = "#d93d3d";
+  ctx.strokeStyle = "#7a1721";
+  ctx.lineWidth = 2;
+  [
+    { x: -13, y: -11, r: 8 },
+    { x: 4, y: 12, r: 7 },
+    { x: -25, y: 16, r: 6 }
+  ].forEach((pepperoni) => {
+    ctx.beginPath();
+    ctx.arc(pepperoni.x, pepperoni.y, pepperoni.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = player.color;
+  ctx.beginPath();
+  ctx.arc(-radius + 8, 0, 9, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.fillStyle = "#111019";
-  ctx.font = "900 20px system-ui";
+  ctx.font = "900 14px system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), player.x, player.y + 0.5);
+  ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), -radius + 8, 0.5);
+  ctx.restore();
+
   ctx.fillStyle = "#fff4df";
   ctx.font = "900 16px system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
   ctx.fillText(player.name || "Player", player.x, player.y - radius - 10);
   ctx.restore();
 }
@@ -1537,20 +1568,22 @@ function drawGamePlayer(ctx, player) {
 function drawGamePizzaShot(ctx, shot) {
   ctx.save();
   ctx.translate(shot.x, shot.y);
-  ctx.rotate(Math.atan2(shot.vy, shot.vx));
-  ctx.fillStyle = "#ffc83d";
-  ctx.strokeStyle = "#5b2b17";
-  ctx.lineWidth = 2;
+  ctx.fillStyle = "#d93d3d";
+  ctx.strokeStyle = "#7a1721";
+  ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.moveTo(-10, -8);
-  ctx.lineTo(12, 0);
-  ctx.lineTo(-10, 8);
-  ctx.closePath();
+  ctx.arc(0, 0, 10, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = "#d93d3d";
+  ctx.fillStyle = "rgba(91, 20, 16, 0.45)";
   ctx.beginPath();
-  ctx.arc(-3, 0, 3, 0, Math.PI * 2);
+  ctx.arc(-3, -3, 2, 0, Math.PI * 2);
+  ctx.arc(4, 1, 1.7, 0, Math.PI * 2);
+  ctx.arc(-1, 5, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 244, 223, 0.55)";
+  ctx.beginPath();
+  ctx.arc(-3, -4, 2, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
