@@ -63,6 +63,9 @@ const GAME_PEPPERONI_SPAWN_MS = 2000;
 const GAME_PICKUP_CLAIM_TTL_MS = 9000;
 const GAME_SPECIAL_TOPPING_CHANCE = 0.1;
 const GAME_SPECIAL_TOPPING_DURATION_MS = 10000;
+const GAME_POWERUP_FLASH_MS = 2600;
+const GAME_RESPAWN_SHIELD_MS = 4000;
+const GAME_SHIELD_FLASH_MS = 1500;
 const GAME_MUSHROOM_FUSE_MS = 700;
 const GAME_MUSHROOM_SPLASH_RADIUS = 92;
 const GAME_MUSHROOM_EXPLOSION_MS = 360;
@@ -1065,6 +1068,7 @@ function createGamePlayer() {
     savedPepperoniCount: 0,
     alive: true,
     deadUntil: 0,
+    shieldUntil: 0,
     lastSeen: Date.now()
   };
 }
@@ -1091,7 +1095,11 @@ function updateLocalGame(dt, now) {
   const hits = pruneGameHits(gameState.hits || {}, now);
   const incomingHit = hits[currentUser.uid];
   const isRespawning = player.deadUntil && now < player.deadUntil;
+  const isShielded = gamePlayerShielded(player, now);
   if (incomingHit && player.powerup === "meatball") {
+    gameConsumedHitIds.add(gameHitId(incomingHit, currentUser.uid));
+    delete hits[currentUser.uid];
+  } else if (incomingHit && isShielded) {
     gameConsumedHitIds.add(gameHitId(incomingHit, currentUser.uid));
     delete hits[currentUser.uid];
   } else if (incomingHit && player.alive && !isRespawning) {
@@ -1107,6 +1115,7 @@ function updateLocalGame(dt, now) {
     player.y = spawn.y;
     player.alive = true;
     player.deadUntil = 0;
+    player.shieldUntil = now + GAME_RESPAWN_SHIELD_MS;
     clearGamePlayerLoadout(player);
     delete hits[currentUser.uid];
   }
@@ -1309,7 +1318,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
     Object.values(players).forEach((player) => {
       if (!projectiles[shot.id]) return;
       const playerIsRespawning = player.deadUntil && now < player.deadUntil;
-      if (!player.alive || player.powerup === "meatball" || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
+      if (!player.alive || player.powerup === "meatball" || playerIsRespawning || gamePlayerShielded(player, now) || hits[player.uid] || player.uid === shot.ownerUid) return;
       if (gameDistance(player.x, player.y, shot.x, shot.y) < gamePlayerHitRadius(player) + GAME_PIZZA_PROJECTILE_SIZE / 2) {
         if (shotType === "mushroom") {
           explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
@@ -1339,7 +1348,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
     if (player.uid !== currentUser.uid || !player.alive || player.powerup !== "meatball") return;
     Object.values(players).forEach((target) => {
       const targetIsRespawning = target.deadUntil && now < target.deadUntil;
-      if (target.uid === player.uid || !target.alive || target.powerup === "meatball" || targetIsRespawning || hits[target.uid]) return;
+      if (target.uid === player.uid || !target.alive || target.powerup === "meatball" || targetIsRespawning || gamePlayerShielded(target, now) || hits[target.uid]) return;
       if (gameDistance(player.x, player.y, target.x, target.y) < GAME_MEATBALL_SIZE / 2 + gamePlayerHitRadius(target)) {
         killGamePlayerByUid(target.uid, player.uid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, `meatball-${now}`);
       }
@@ -1354,6 +1363,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
     if (player.uid !== currentUser.uid || !player.alive || playerIsRespawning) return;
+    if (gamePlayerShielded(player, now)) return;
     if (player.powerup === "meatball") return;
     if (zombies.some((zombie) => zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < gamePlayerHitRadius(player) + GAME_ZOMBIE_RADIUS)) {
       markGamePlayerDead(player, pepperoniPickups, now);
@@ -1365,7 +1375,7 @@ function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard
   addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
-    if (!player.alive || player.powerup === "meatball" || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
+    if (!player.alive || player.powerup === "meatball" || playerIsRespawning || gamePlayerShielded(player, now) || hits[player.uid] || player.uid === shot.ownerUid) return;
     if (gameDistance(player.x, player.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + gamePlayerHitRadius(player)) {
       killGamePlayerByUid(player.uid, shot.ownerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, shot.id);
     }
@@ -1392,7 +1402,7 @@ function addGameExplosionEffect(x, y, radius, now = Date.now()) {
 
 function killGamePlayerByUid(victimUid, killerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, hitPrefix) {
   const victim = players[victimUid];
-  if (!victim || !victim.alive || victim.powerup === "meatball" || hits[victimUid]) return;
+  if (!victim || !victim.alive || victim.powerup === "meatball" || gamePlayerShielded(victim, now) || hits[victimUid]) return;
   markGamePlayerDead(victim, pepperoniPickups, now);
   hits[victimUid] = {
     id: `${hitPrefix}-${victimUid}`,
@@ -1407,6 +1417,7 @@ function markGamePlayerDead(player, pepperoniPickups, now = Date.now()) {
   dropGamePepperoniPile(player, pepperoniPickups, now);
   player.alive = false;
   player.deadUntil = now + GAME_RESPAWN_MS;
+  player.shieldUntil = 0;
   clearGamePlayerLoadout(player);
 }
 
@@ -1601,6 +1612,45 @@ function normalizeGamePlayerPowerup(player, now = Date.now()) {
 
 function gamePlayerHitRadius(player) {
   return player?.powerup === "meatball" ? GAME_MEATBALL_SIZE / 2 : GAME_PLAYER_SIZE / 2;
+}
+
+function gamePlayerShielded(player, now = Date.now()) {
+  return Boolean(player?.alive && Number(player.shieldUntil || 0) > now);
+}
+
+function gameExpiringFlashAlpha(until = 0, windowMs = GAME_POWERUP_FLASH_MS, now = Date.now()) {
+  const remaining = Number(until || 0) - now;
+  if (remaining <= 0 || remaining > windowMs) return 1;
+  return Math.floor(now / 150) % 2 === 0 ? 1 : 0.28;
+}
+
+function drawGameShield(ctx, player, radius, now = Date.now()) {
+  if (!gamePlayerShielded(player, now)) return;
+  const alpha = gameExpiringFlashAlpha(player.shieldUntil, GAME_SHIELD_FLASH_MS, now);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = "#7ee7ff";
+  ctx.fillStyle = "rgba(126, 231, 255, 0.13)";
+  ctx.lineWidth = 4;
+  ctx.shadowColor = "rgba(126, 231, 255, 0.9)";
+  ctx.shadowBlur = 18;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius + 10, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#dffaff";
+  ctx.strokeStyle = "#225e70";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -radius - 29);
+  ctx.lineTo(14, -radius - 23);
+  ctx.quadraticCurveTo(11, -radius - 7, 0, -radius - 1);
+  ctx.quadraticCurveTo(-11, -radius - 7, -14, -radius - 23);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
 }
 
 function gamePlayerMoveSpeed(player) {
@@ -2258,10 +2308,15 @@ function drawGamePlayer(ctx, player) {
   const aimY = Number(player.aimY || 0);
   const aimMag = Math.hypot(aimX, aimY) || 1;
   const facingAngle = Math.atan2(aimY / aimMag, aimX / aimMag);
+  const now = Date.now();
+  const meatballFlashAlpha = player.powerup === "meatball" ? gameExpiringFlashAlpha(player.powerupUntil, GAME_POWERUP_FLASH_MS, now) : 1;
+  const toppingFlashAlpha = player.powerup === "mushroom" || player.powerup === "basil" ? gameExpiringFlashAlpha(player.powerupUntil, GAME_POWERUP_FLASH_MS, now) : 1;
   ctx.save();
   ctx.globalAlpha = player.alive ? 1 : 0.35;
   ctx.translate(player.x, player.y);
+  drawGameShield(ctx, player, player.powerup === "meatball" ? GAME_MEATBALL_SIZE / 2 : radius, now);
   if (player.powerup === "meatball") {
+    ctx.globalAlpha *= meatballFlashAlpha;
     drawGameMeatball(ctx, 0, 0, GAME_MEATBALL_SIZE / 2, 5);
     ctx.fillStyle = "#fff4df";
     ctx.font = "900 20px system-ui";
@@ -2324,11 +2379,14 @@ function drawGamePlayer(ctx, player) {
   ];
   const toppingType = player.powerup === "mushroom" ? "mushroom" : player.powerup === "basil" ? "basil" : "pepperoni";
   const visualCount = player.powerup === "basil" ? 5 : Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
+  ctx.save();
+  ctx.globalAlpha *= toppingFlashAlpha;
   for (let index = 0; index < visualCount; index += 1) {
     const spot = toppingSpots[index % toppingSpots.length];
     const stack = Math.floor(index / toppingSpots.length);
     drawGameTopping(ctx, toppingType, spot.x + stack * 2, spot.y - stack * 2, Math.max(4, spot.r - stack * 0.9), 1.7);
   }
+  ctx.restore();
 
   ctx.fillStyle = player.color;
   ctx.beginPath();
