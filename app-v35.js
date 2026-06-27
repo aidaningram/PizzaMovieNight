@@ -961,7 +961,7 @@ function enterGameFreePlay() {
   }
   gameViewMode = "free";
   gameSpectating = false;
-  gameMatchQueued = false;
+  clearGameQueue();
   updateGameModePanels();
   joinGameArena("free");
   startGameLoop();
@@ -970,7 +970,7 @@ function enterGameFreePlay() {
 function enterGameSpectate() {
   gameViewMode = "spectate";
   gameSpectating = true;
-  gameMatchQueued = false;
+  clearGameQueue();
   leaveGamePlayer();
   updateGameModePanels();
   writeGameLobbyPresence("spectate");
@@ -980,7 +980,7 @@ function enterGameSpectate() {
 function returnGameMenu() {
   gameViewMode = "menu";
   gameSpectating = false;
-  gameMatchQueued = false;
+  clearGameQueue();
   leaveGamePlayer();
   gameLocalPlayer = null;
   gameJoinedArena = false;
@@ -992,9 +992,41 @@ async function leaveGamePlayer() {
   if (!currentUser?.uid || !FIREBASE_READY || !services?.rtdb) return;
   await services.rtdbFns.update(gameArenaRef(), {
     [`players/${currentUser.uid}`]: null,
+    [`match/queued/${currentUser.uid}`]: null,
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
     updatedAt: Date.now()
   }).catch(() => {});
+}
+
+function clearGameQueue() {
+  if (!currentUser?.uid) return;
+  gameMatchQueued = false;
+  if (gameState?.match?.queued) {
+    const queued = { ...(gameState.match.queued || {}) };
+    delete queued[currentUser.uid];
+    gameState = { ...gameState, match: { ...gameState.match, queued } };
+  }
+  if (familyData?.gameArena?.match?.queued) {
+    const queued = { ...(familyData.gameArena.match.queued || {}) };
+    delete queued[currentUser.uid];
+    familyData = {
+      ...familyData,
+      gameArena: {
+        ...familyData.gameArena,
+        match: {
+          ...familyData.gameArena.match,
+          queued
+        }
+      }
+    };
+  }
+  if (FIREBASE_READY && services?.rtdb) {
+    services.rtdbFns.update(gameArenaRef(), {
+      [`match/queued/${currentUser.uid}`]: null,
+      [`lobby/${currentUser.uid}/queued`]: false,
+      updatedAt: Date.now()
+    }).catch(() => {});
+  }
 }
 
 function startGameLoop() {
@@ -1027,12 +1059,21 @@ function updateGameModePanels() {
   const note = document.querySelector("#match-queue-note");
   const liveLeaderboard = document.querySelector("#match-leaderboard");
   const endPanel = document.querySelector("#match-end-panel");
+  const active = gameActiveContestants(arena);
+  const queuedCount = active.filter((entry) => match.queued?.[entry.uid]).length;
+  const isQueued = Boolean(gameMatchQueued || match.queued?.[currentUser?.uid]);
+  const everyoneQueued = active.length > 1 && queuedCount === active.length;
+  const canQueue = active.length > 1 && !inProgress && match.status !== "ended";
 
   const showPlay = gameViewMode !== "menu" || (inProgress && isParticipant);
   if (menuPanel) menuPanel.hidden = showPlay;
   if (playPanel) playPanel.hidden = !showPlay;
   if (liveLeaderboard) liveLeaderboard.hidden = !(match.status === "active" || match.status === "ended");
-  if (queueButton) queueButton.hidden = gameViewMode === "spectate" || match.status === "active" || match.status === "ended";
+  if (queueButton) {
+    queueButton.hidden = gameViewMode === "spectate" || match.status === "active" || match.status === "ended";
+    queueButton.disabled = !canQueue && !isQueued;
+    queueButton.textContent = isQueued && !everyoneQueued ? "Unqueue" : "Queue Match";
+  }
   if (shootButton) shootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
   if (mobileShootButton) mobileShootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
   if (endPanel) endPanel.hidden = !gameMatchEnded(match);
@@ -1040,15 +1081,15 @@ function updateGameModePanels() {
   if (freeButton) freeButton.disabled = inProgress && !isParticipant;
   if (startButton) {
     startButton.hidden = inProgress && !isParticipant;
-    startButton.textContent = gameMatchQueued || match.queued?.[currentUser?.uid] ? "Queued" : "Start Match";
+    startButton.disabled = !canQueue && !isQueued;
+    startButton.textContent = isQueued && !everyoneQueued ? "Unqueue" : isQueued ? "Queued" : "Start Match";
   }
   if (spectateButton) spectateButton.hidden = !(inProgress && !isParticipant);
 
   if (note) {
-    const active = gameActiveContestants(arena);
-    const queuedCount = active.filter((entry) => match.queued?.[entry.uid]).length;
     if (inProgress && !isParticipant) note.textContent = "A match is already running. You can spectate until it ends.";
     else if (active.length <= 1) note.textContent = "A match needs at least two active players in Pizza Arena.";
+    else if (isQueued && !everyoneQueued) note.textContent = `${queuedCount} of ${active.length} queued. Tap Unqueue to back out.`;
     else note.textContent = `${queuedCount} of ${active.length} active player${active.length === 1 ? "" : "s"} queued.`;
   }
 
@@ -1104,8 +1145,24 @@ async function queueGameMatch() {
   const arena = normalizeGame(familyData?.gameArena);
   const match = arena.match;
   if (gameMatchInProgress(match) && !gameMatchParticipant(match, currentUser.uid)) return;
+  const contestants = gameActiveContestants(arena);
+  const queuedBefore = match.queued || {};
+  const queuedCount = contestants.filter((entry) => queuedBefore[entry.uid]).length;
+  const everyoneQueued = contestants.length > 1 && queuedCount === contestants.length;
+  const isQueued = Boolean(gameMatchQueued || queuedBefore[currentUser.uid]);
+  if (contestants.length <= 1) {
+    gameMatchQueued = false;
+    updateGameModePanels();
+    return;
+  }
+  if (isQueued && !everyoneQueued) {
+    clearGameQueue();
+    updateGameModePanels();
+    return;
+  }
+  if (isQueued && everyoneQueued) return;
   gameMatchQueued = true;
-  const queued = { ...(match.queued || {}), [currentUser.uid]: true };
+  const queued = { ...queuedBefore, [currentUser.uid]: true };
   const nextMatch = { ...match, queued };
   gameState = { ...(gameState || arena), match: nextMatch };
   updateGameModePanels();
@@ -3107,6 +3164,10 @@ function hideGameArenaStatus() {
 }
 
 function cleanupGame() {
+  if (gameState || gameJoinedArena || gameMatchQueued) {
+    clearGameQueue();
+    leaveGamePlayer();
+  }
   document.documentElement.classList.remove("game-active-root");
   document.body.classList.remove("game-active");
   if (gameTouchMoveLocked) {
