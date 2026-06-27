@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 12;
+const GAME_VERSION = 13;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -46,7 +46,8 @@ const GAME_PIZZA_PROJECTILE_SIZE = 20;
 const GAME_PIZZA_BOUNDS_PADDING = 80;
 const GAME_RESPAWN_MS = 2600;
 const GAME_ZOMBIE_IMAGE_SRC = "./assets/zombie.png";
-const GAME_ZOMBIE_MAX = 8;
+const GAME_ZOMBIE_MAX = 6;
+const GAME_ZOMBIE_MAX_AGGRO = 3;
 const GAME_ZOMBIE_SIZE = 44;
 const GAME_ZOMBIE_RADIUS = 22;
 const GAME_ZOMBIE_SPEED = 82;
@@ -84,9 +85,7 @@ const GAME_ZOMBIE_STARTS = [
   { id: "zombie-3", x: 120, y: 680, vx: 0.75, vy: -0.8, facing: 1, alive: true, deadUntil: 0 },
   { id: "zombie-4", x: 840, y: 680, vx: -0.7, vy: -0.65, facing: -1, alive: true, deadUntil: 0 },
   { id: "zombie-5", x: 470, y: 245, vx: 0.35, vy: 1, facing: 1, alive: true, deadUntil: 0 },
-  { id: "zombie-6", x: 470, y: 855, vx: -0.45, vy: -1, facing: -1, alive: true, deadUntil: 0 },
-  { id: "zombie-7", x: 850, y: 900, vx: -1, vy: 0.2, facing: -1, alive: true, deadUntil: 0 },
-  { id: "zombie-8", x: 120, y: 940, vx: 0.7, vy: -0.55, facing: 1, alive: true, deadUntil: 0 }
+  { id: "zombie-6", x: 470, y: 855, vx: -0.45, vy: -1, facing: -1, alive: true, deadUntil: 0 }
 ];
 
 let services = null;
@@ -1312,7 +1311,9 @@ function collectGamePepperoni(player, pickups) {
 }
 
 function moveGameZombies(zombies, players, dt, now = Date.now()) {
-  return normalizeGameZombies(zombies).slice(0, GAME_ZOMBIE_MAX).map((zombie) => {
+  const normalizedZombies = normalizeGameZombies(zombies).slice(0, GAME_ZOMBIE_MAX);
+  const aggroZombieIds = gameAggroZombieIds(normalizedZombies, players, now);
+  return normalizedZombies.map((zombie) => {
     let nextZombie = zombie;
     if (!nextZombie.alive) {
       if (now < Number(nextZombie.deadUntil || 0)) return nextZombie;
@@ -1329,7 +1330,7 @@ function moveGameZombies(zombies, players, dt, now = Date.now()) {
     }
 
     nextZombie = normalizeGameZombie(nextZombie, now);
-    const target = closestGameZombieTarget(nextZombie, players);
+    const target = aggroZombieIds.has(nextZombie.id) ? closestGameZombieTarget(nextZombie, players, now) : null;
     if (target) {
       const dx = target.x - nextZombie.x;
       const dy = target.y - nextZombie.y;
@@ -1447,9 +1448,26 @@ function randomGameZombieTurnDelay() {
   return gameRandomBetween(GAME_ZOMBIE_TURN_MIN_MS, GAME_ZOMBIE_TURN_MAX_MS);
 }
 
-function closestGameZombieTarget(zombie, players = {}) {
+function gameAggroZombieIds(zombies = [], players = {}, now = Date.now()) {
+  return new Set(zombies
+    .filter((zombie) => zombie.alive && !(zombie.deadUntil && now < zombie.deadUntil))
+    .map((zombie) => ({
+      zombie,
+      target: closestGameZombieTarget(zombie, players, now)
+    }))
+    .filter(({ target }) => target)
+    .map(({ zombie, target }) => ({
+      id: zombie.id,
+      distance: gameDistance(zombie.x, zombie.y, target.x, target.y)
+    }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, GAME_ZOMBIE_MAX_AGGRO)
+    .map(({ id }) => id));
+}
+
+function closestGameZombieTarget(zombie, players = {}, now = Date.now()) {
   return Object.values(players)
-    .filter((player) => player.alive && !(player.deadUntil && Date.now() < player.deadUntil))
+    .filter((player) => player.alive && !(player.deadUntil && now < player.deadUntil))
     .map((player) => ({ player, distance: gameDistance(zombie.x, zombie.y, player.x, player.y) }))
     .filter(({ distance }) => distance <= GAME_ZOMBIE_AGGRO_RADIUS)
     .sort((a, b) => a.distance - b.distance)[0]?.player || null;
