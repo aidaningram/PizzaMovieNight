@@ -989,7 +989,7 @@ label {
 .game-menu-panel {
   align-self: center;
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .game-rules-card,
@@ -1003,23 +1003,31 @@ label {
 
 .game-rules-card {
   display: grid;
-  gap: 14px;
-  padding: 18px;
+  gap: 8px;
+  padding: 14px;
 }
 
 .game-rules-card .page-title {
-  font-size: clamp(2.2rem, 11vw, 4rem);
+  font-size: clamp(2rem, 9vw, 3.2rem);
+}
+
+.game-rules-card .helper-text {
+  font-size: 0.88rem;
+  line-height: 1.25;
 }
 
 .game-rules-grid {
   display: grid;
-  gap: 10px;
+  gap: 7px;
 }
 
 .game-rules-grid div {
   display: grid;
-  gap: 4px;
-  padding: 12px;
+  grid-template-columns: 34px minmax(86px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(248, 239, 224, 0.06);
@@ -1027,19 +1035,103 @@ label {
 
 .game-rules-grid strong {
   color: var(--ink);
+  font-size: 0.88rem;
   font-weight: 950;
 }
 
 .game-rules-grid span {
   color: var(--muted);
-  font-size: 0.9rem;
-  line-height: 1.35;
+  font-size: 0.78rem;
+  line-height: 1.15;
+}
+
+.rule-icon {
+  position: relative;
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 2px solid rgba(17, 16, 25, 0.72);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
+}
+
+.pepperoni-icon {
+  background: radial-gradient(circle at 35% 35%, #ff7f51 0 10%, transparent 12%),
+    radial-gradient(circle at 66% 62%, #8c1d18 0 9%, transparent 11%),
+    #e5392f;
+}
+
+.mushroom-icon {
+  border-radius: 12px 12px 999px 999px;
+  background: linear-gradient(#f4eee5 0 42%, #caa892 43% 100%);
+}
+
+.mushroom-icon::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 12px;
+  width: 10px;
+  height: 13px;
+  border-radius: 4px;
+  background: #f8efe0;
+}
+
+.basil-icon {
+  border-radius: 999px 999px 999px 4px;
+  background: linear-gradient(135deg, #55c97a, #1e8b55);
+  transform: rotate(-35deg);
+}
+
+.meatball-icon {
+  background: radial-gradient(circle at 34% 30%, rgba(255, 244, 223, 0.32), transparent 18%), #8f3b2f;
+}
+
+.zombie-icon {
+  background: radial-gradient(circle at 68% 18%, #f06ca8 0 13%, transparent 14%), #66d66f;
+}
+
+.zombie-icon::before,
+.zombie-icon::after {
+  content: "";
+  position: absolute;
+  top: 11px;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #111019;
+}
+
+.zombie-icon::before {
+  left: 8px;
+}
+
+.zombie-icon::after {
+  right: 8px;
+}
+
+.match-icon {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+.match-icon::after {
+  content: "XP";
+  color: #111019;
+  font-size: 0.55rem;
+  font-weight: 950;
 }
 
 .game-menu-actions {
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px;
+}
+
+.game-menu-actions button {
+  min-height: 42px;
+  padding: 9px 12px;
 }
 
 .game-menu-actions button:disabled,
@@ -1319,17 +1411,62 @@ label {
   }
 
   .game-menu-panel {
-    padding: 0 10px 10px;
+    min-height: 0;
+    padding: 0 10px 8px;
     align-self: start;
-    overflow: auto;
+    overflow: hidden;
   }
 
   .game-rules-card {
-    padding: 14px;
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .game-rules-card .page-title {
+    font-size: clamp(1.65rem, 8vw, 2.5rem);
+  }
+
+  .game-rules-card .helper-text {
+    font-size: 0.78rem;
   }
 
   .game-rules-grid {
     grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .game-rules-grid div {
+    grid-template-columns: 30px minmax(78px, auto) minmax(0, 1fr);
+    min-height: 36px;
+    padding: 5px 7px;
+  }
+
+  .rule-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .game-rules-grid strong {
+    font-size: 0.8rem;
+  }
+
+  .game-rules-grid span {
+    font-size: 0.7rem;
+  }
+
+  .game-menu-actions {
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .game-menu-actions button {
+    min-height: 38px;
+    padding: 7px 10px;
+  }
+
+  #match-queue-note {
+    font-size: 0.72rem;
+    line-height: 1.15;
   }
 
   .pizza-game-topbar {
