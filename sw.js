@@ -1,4 +1,4 @@
-const CACHE_NAME = "pizza-movie-night-v71";
+const CACHE_NAME = "pizza-movie-night-v72";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,7 +7,8 @@ const ASSETS = [
   "./firebase-config.js",
   "./omdb-config.js",
   "./manifest.webmanifest",
-  "./icon.svg"
+  "./icon.svg",
+  "./assets/zombie.png"
 ];
 
 self.addEventListener("install", (event) => {

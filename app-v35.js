@@ -36,7 +36,7 @@ const genreSearchSeeds = {
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
-const GAME_VERSION = 11;
+const GAME_VERSION = 12;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
@@ -45,10 +45,15 @@ const GAME_PIZZA_LIFE_MS = 1300;
 const GAME_PIZZA_PROJECTILE_SIZE = 20;
 const GAME_PIZZA_BOUNDS_PADDING = 80;
 const GAME_RESPAWN_MS = 2600;
-const GAME_TOMATO_SIZE = 26;
-const GAME_TOMATO_SPEED = 95;
-const GAME_TOMATO_TURN_MIN_MS = 550;
-const GAME_TOMATO_TURN_MAX_MS = 1700;
+const GAME_ZOMBIE_IMAGE_SRC = "./assets/zombie.png";
+const GAME_ZOMBIE_MAX = 8;
+const GAME_ZOMBIE_SIZE = 44;
+const GAME_ZOMBIE_RADIUS = 22;
+const GAME_ZOMBIE_SPEED = 82;
+const GAME_ZOMBIE_AGGRO_RADIUS = 300;
+const GAME_ZOMBIE_RESPAWN_MS = 7000;
+const GAME_ZOMBIE_TURN_MIN_MS = 700;
+const GAME_ZOMBIE_TURN_MAX_MS = 1900;
 const GAME_PEPPERONI_PICKUP_SIZE = 22;
 const GAME_MAX_MAP_PEPPERONI = 15;
 const GAME_MAX_PLAYER_PEPPERONI = 10;
@@ -73,14 +78,15 @@ const GAME_WALLS = [
   { x: 330, y: 925, w: 230, h: 28 },
   { x: 720, y: 990, w: 120, h: 28 }
 ];
-const GAME_TOMATO_STARTS = [
-  { id: "tomato-1", x: 92, y: 82, vx: 1, vy: 0.35 },
-  { id: "tomato-2", x: 855, y: 122, vx: -0.85, vy: 0.55 },
-  { id: "tomato-3", x: 120, y: 680, vx: 0.75, vy: -0.8 },
-  { id: "tomato-4", x: 840, y: 680, vx: -0.7, vy: -0.65 },
-  { id: "tomato-5", x: 470, y: 116, vx: 0.35, vy: 1 },
-  { id: "tomato-6", x: 470, y: 865, vx: -0.45, vy: -1 },
-  { id: "tomato-7", x: 850, y: 900, vx: -1, vy: 0.2 }
+const GAME_ZOMBIE_STARTS = [
+  { id: "zombie-1", x: 92, y: 82, vx: 1, vy: 0.35, facing: 1, alive: true, deadUntil: 0 },
+  { id: "zombie-2", x: 855, y: 122, vx: -0.85, vy: 0.55, facing: -1, alive: true, deadUntil: 0 },
+  { id: "zombie-3", x: 120, y: 680, vx: 0.75, vy: -0.8, facing: 1, alive: true, deadUntil: 0 },
+  { id: "zombie-4", x: 840, y: 680, vx: -0.7, vy: -0.65, facing: -1, alive: true, deadUntil: 0 },
+  { id: "zombie-5", x: 470, y: 245, vx: 0.35, vy: 1, facing: 1, alive: true, deadUntil: 0 },
+  { id: "zombie-6", x: 470, y: 855, vx: -0.45, vy: -1, facing: -1, alive: true, deadUntil: 0 },
+  { id: "zombie-7", x: 850, y: 900, vx: -1, vy: 0.2, facing: -1, alive: true, deadUntil: 0 },
+  { id: "zombie-8", x: 120, y: 940, vx: 0.7, vy: -0.55, facing: 1, alive: true, deadUntil: 0 }
 ];
 
 let services = null;
@@ -108,6 +114,7 @@ let gameVisualPlayers = {};
 let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
+let gameZombieImage = null;
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -921,12 +928,12 @@ function receiveGameSnapshot() {
     ...(ownPlayer ? { [currentUser.uid]: ownPlayer } : {})
   };
   gameRemoteProjectiles = remoteGame.projectiles;
-  const localTomatoes = gameState?.version === GAME_VERSION && gameState?.tomatoes?.length ? gameState.tomatoes : null;
-  const shouldKeepLocalTomatoes = currentUser?.uid === gameHostUid(players) && localTomatoes;
+  const localZombies = gameState?.version === GAME_VERSION && gameState?.zombies?.length ? gameState.zombies : null;
+  const shouldKeepLocalZombies = currentUser?.uid === gameHostUid(players) && localZombies;
   gameState = {
     ...remoteGame,
     players,
-    tomatoes: shouldKeepLocalTomatoes ? localTomatoes : remoteGame.tomatoes,
+    zombies: shouldKeepLocalZombies ? mergeGameZombies(remoteGame.zombies, localZombies) : remoteGame.zombies,
     projectiles: mergeGameProjectiles(remoteGame.projectiles, gameState?.projectiles || {})
   };
   gameLocalPlayer = ownPlayer;
@@ -938,7 +945,7 @@ function defaultGameState() {
     players: {},
     projectiles: {},
     walls: GAME_WALLS,
-    tomatoes: GAME_TOMATO_STARTS.map((tomato) => ({ ...tomato })),
+    zombies: GAME_ZOMBIE_STARTS.map((zombie) => ({ ...zombie })),
     pepperoniPickups: {},
     lastPepperoniSpawnAt: Date.now() - GAME_PEPPERONI_SPAWN_MS,
     leaderboard: {},
@@ -958,7 +965,7 @@ function normalizeGame(value) {
     players: value?.players || {},
     projectiles: value?.projectiles || {},
     walls: GAME_WALLS,
-    tomatoes: useCurrentMap && value?.tomatoes ? value.tomatoes : fallback.tomatoes,
+    zombies: useCurrentMap && value?.zombies ? normalizeGameZombies(value.zombies) : fallback.zombies,
     pepperoniPickups: useCurrentMap && value?.pepperoniPickups ? value.pepperoniPickups : fallback.pepperoniPickups,
     lastPepperoniSpawnAt: useCurrentMap ? Number(value?.lastPepperoniSpawnAt || fallback.lastPepperoniSpawnAt) : fallback.lastPepperoniSpawnAt,
     leaderboard: value?.leaderboard || {},
@@ -1048,11 +1055,12 @@ function updateLocalGame(dt, now) {
   player.lastSeen = now;
   const projectileCountBefore = Object.keys(gameState.projectiles || {}).length;
   const pepperoniCountBefore = Object.keys(gameState.pepperoniPickups || {}).length;
+  const zombieSignatureBefore = gameZombieSignature(gameState.zombies || []);
   const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
-  const serverTomatoes = normalizeGame(familyData?.gameArena).tomatoes;
-  const tomatoes = isHost ? moveGameTomatoes(gameState.tomatoes, dt) : serverTomatoes;
+  const serverGame = normalizeGame(familyData?.gameArena);
+  const zombies = isHost ? moveGameZombies(gameState.zombies, players, dt, now) : serverGame.zombies;
   let pepperoniPickups = isHost ? { ...(gameState.pepperoniPickups || {}) } : { ...(normalizeGame(familyData?.gameArena).pepperoniPickups || {}) };
   let lastPepperoniSpawnAt = isHost ? Number(gameState.lastPepperoniSpawnAt || 0) : Number(normalizeGame(familyData?.gameArena).lastPepperoniSpawnAt || 0);
   if (isHost) {
@@ -1064,12 +1072,12 @@ function updateLocalGame(dt, now) {
   players[currentUser.uid] = player;
   const leaderboard = ensureGameLeaderboardEntry(gameState.leaderboard, player);
   const nextKillLog = [...(gameState.killLog || [])];
-  resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, hits, now);
+  resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog, hits, now);
   gameState = {
     ...gameState,
     players,
     projectiles,
-    tomatoes,
+    zombies,
     pepperoniPickups,
     lastPepperoniSpawnAt,
     leaderboard,
@@ -1080,15 +1088,17 @@ function updateLocalGame(dt, now) {
     updatedAt: now
   };
   gameLocalPlayer = gameState.players[currentUser.uid];
+  const zombieSharedChanged = !isHost && gameZombieSignature(gameState.zombies || []) !== zombieSignatureBefore;
   const sharedArenaChanged = Object.keys(hits).length !== hitCountBefore
     || Object.keys(projectiles).length !== projectileCountBefore
-    || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore;
+    || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore
+    || zombieSharedChanged;
+  if (sharedArenaChanged) {
+    writeGameArenaSharedState(gameState, { includeZombies: zombieSharedChanged });
+  }
   if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
     gameLastHeartbeat = now;
     syncLocalGame(now);
-  }
-  if (sharedArenaChanged) {
-    writeGameArenaSharedState(gameState);
   }
 }
 
@@ -1099,15 +1109,20 @@ async function syncLocalGame(now) {
   const leaderboard = ensureGameLeaderboardEntry(nextGame.leaderboard, gameLocalPlayer);
   const hits = pruneGameHits(nextGame.hits || {}, now);
   const isHost = currentUser.uid === gameHostUid(players);
-  const syncedTomatoes = isHost ? nextGame.tomatoes : normalizeGame(familyData?.gameArena).tomatoes;
-  const syncedPepperoniPickups = isHost ? nextGame.pepperoniPickups : normalizeGame(familyData?.gameArena).pepperoniPickups;
-  const syncedLastPepperoniSpawnAt = isHost ? nextGame.lastPepperoniSpawnAt : normalizeGame(familyData?.gameArena).lastPepperoniSpawnAt;
+  const serverGame = normalizeGame(familyData?.gameArena);
+  const syncedZombies = isHost
+    ? nextGame.zombies
+    : gameZombieSignature(nextGame.zombies) === gameZombieSignature(serverGame.zombies)
+      ? serverGame.zombies
+      : nextGame.zombies;
+  const syncedPepperoniPickups = isHost ? nextGame.pepperoniPickups : serverGame.pepperoniPickups;
+  const syncedLastPepperoniSpawnAt = isHost ? nextGame.lastPepperoniSpawnAt : serverGame.lastPepperoniSpawnAt;
   const nextArena = {
     ...nextGame,
     players,
     projectiles,
     walls: GAME_WALLS,
-    tomatoes: syncedTomatoes,
+    zombies: syncedZombies,
     pepperoniPickups: syncedPepperoniPickups || {},
     lastPepperoniSpawnAt: Number(syncedLastPepperoniSpawnAt || 0),
     leaderboard,
@@ -1116,14 +1131,14 @@ async function syncLocalGame(now) {
     version: GAME_VERSION,
     updatedAt: Date.now()
   };
-  gameState = { ...nextArena, tomatoes: nextGame.tomatoes };
+  gameState = { ...nextArena, zombies: nextGame.zombies };
   gameLocalPlayer = gameState.players[currentUser.uid];
   await writeGameArena(nextArena);
 }
 
 async function writeGameArena(nextArena) {
   const existingPlayers = familyData?.gameArena?.players || {};
-  const existingTomatoes = familyData?.gameArena?.tomatoes;
+  const existingZombies = familyData?.gameArena?.zombies;
   familyData = { ...familyData, gameArena: nextArena };
   if (!FIREBASE_READY) {
     localStorage.setItem(demoStore.key, JSON.stringify(familyData));
@@ -1139,8 +1154,8 @@ async function writeGameArena(nextArena) {
   Object.keys(existingPlayers).forEach((uid) => {
     if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
   });
-  if (isHost || !existingTomatoes) {
-    patch.tomatoes = nextArena.tomatoes || GAME_TOMATO_STARTS;
+  if (isHost || !existingZombies) {
+    patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
     patch.pepperoniPickups = Object.keys(nextArena.pepperoniPickups || {}).length ? nextArena.pepperoniPickups : null;
     patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
   }
@@ -1151,12 +1166,12 @@ async function writeGameArena(nextArena) {
   });
 }
 
-async function writeGameArenaSharedState(nextArena) {
+async function writeGameArenaSharedState(nextArena, options = {}) {
   if (!FIREBASE_READY) {
     await writeGameArena(nextArena);
     return;
   }
-  await services.rtdbFns.update(gameArenaRef(), {
+  const patch = {
     version: GAME_VERSION,
     walls: GAME_WALLS,
     projectiles: Object.keys(nextArena.projectiles || {}).length ? nextArena.projectiles : null,
@@ -1166,16 +1181,21 @@ async function writeGameArenaSharedState(nextArena) {
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
     updatedAt: Date.now()
-  }).catch(() => {
+  };
+  if (options.includeZombies) {
+    patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
+  }
+  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {
     setGameStatus("Error", false);
     showGameArenaStatus("Realtime Database could not save the game.");
   });
 }
 
-function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLog, hits, now) {
+function resolveGameHits(players, projectiles, zombies, leaderboard, nextKillLog, hits, now) {
   Object.values(projectiles).forEach((shot) => {
     if (shot.ownerUid !== currentUser.uid) return;
     Object.values(players).forEach((player) => {
+      if (!projectiles[shot.id]) return;
       const playerIsRespawning = player.deadUntil && now < player.deadUntil;
       if (!player.alive || playerIsRespawning || hits[player.uid] || player.uid === shot.ownerUid) return;
       if (gameDistance(player.x, player.y, shot.x, shot.y) < GAME_PLAYER_SIZE) {
@@ -1192,12 +1212,22 @@ function resolveGameHits(players, projectiles, tomatoes, leaderboard, nextKillLo
         delete projectiles[shot.id];
       }
     });
+    if (!projectiles[shot.id]) return;
+    zombies.forEach((zombie) => {
+      if (!projectiles[shot.id] || !zombie.alive) return;
+      if (gameDistance(zombie.x, zombie.y, shot.x, shot.y) < GAME_ZOMBIE_RADIUS + GAME_PIZZA_PROJECTILE_SIZE / 2) {
+        zombie.alive = false;
+        zombie.deadUntil = now + GAME_ZOMBIE_RESPAWN_MS;
+        gameRemovedProjectileIds.add(shot.id);
+        delete projectiles[shot.id];
+      }
+    });
   });
 
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
     if (player.uid !== currentUser.uid || !player.alive || playerIsRespawning) return;
-    if (tomatoes.some((tomato) => gameDistance(player.x, player.y, tomato.x, tomato.y) < (GAME_PLAYER_SIZE + GAME_TOMATO_SIZE) / 2)) {
+    if (zombies.some((zombie) => zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < GAME_PLAYER_SIZE / 2 + GAME_ZOMBIE_RADIUS)) {
       player.alive = false;
       player.deadUntil = now + GAME_RESPAWN_MS;
     }
@@ -1262,7 +1292,7 @@ function randomGamePepperoniSpawn(existingPickups = {}) {
     const x = radius + 28 + Math.random() * (GAME_ARENA.width - (radius + 28) * 2);
     const y = radius + 28 + Math.random() * (GAME_ARENA.height - (radius + 28) * 2);
     const blocked = state.walls.some((wall) => gameCircleRectHit(x, y, radius + 6, wall))
-      || (state.tomatoes || []).some((tomato) => gameDistance(x, y, tomato.x, tomato.y) < 58)
+      || (state.zombies || []).some((zombie) => zombie.alive && gameDistance(x, y, zombie.x, zombie.y) < 70)
       || Object.values(state.players || {}).some((player) => gameDistance(x, y, player.x, player.y) < GAME_PLAYER_SIZE)
       || Object.values(existingPickups || {}).some((pickup) => gameDistance(x, y, pickup.x, pickup.y) < 44);
     if (!blocked) return { x, y };
@@ -1281,84 +1311,173 @@ function collectGamePepperoni(player, pickups) {
   });
 }
 
-function moveGameTomatoes(tomatoes, dt) {
-  const now = Date.now();
-  return tomatoes.map((tomato) => {
-    let wanderingTomato = normalizeGameTomato(tomato, now);
-    if (now >= wanderingTomato.nextTurnAt) {
-      wanderingTomato = turnGameTomato(wanderingTomato, now);
+function moveGameZombies(zombies, players, dt, now = Date.now()) {
+  return normalizeGameZombies(zombies).slice(0, GAME_ZOMBIE_MAX).map((zombie) => {
+    let nextZombie = zombie;
+    if (!nextZombie.alive) {
+      if (now < Number(nextZombie.deadUntil || 0)) return nextZombie;
+      const spawn = randomGameZombieSpawn(players, zombies);
+      nextZombie = {
+        ...nextZombie,
+        ...(spawn || { x: nextZombie.x, y: nextZombie.y }),
+        alive: true,
+        deadUntil: 0,
+        vx: spawn?.vx || nextZombie.vx || 1,
+        vy: spawn?.vy || nextZombie.vy || 0,
+        nextTurnAt: now + randomGameZombieTurnDelay()
+      };
     }
 
-    let next = {
-      ...wanderingTomato,
-      x: wanderingTomato.x + wanderingTomato.vx * GAME_TOMATO_SPEED * dt,
-      y: wanderingTomato.y + wanderingTomato.vy * GAME_TOMATO_SPEED * dt
+    nextZombie = normalizeGameZombie(nextZombie, now);
+    const target = closestGameZombieTarget(nextZombie, players);
+    if (target) {
+      const dx = target.x - nextZombie.x;
+      const dy = target.y - nextZombie.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      nextZombie = {
+        ...nextZombie,
+        vx: dx / distance,
+        vy: dy / distance
+      };
+    } else if (now >= Number(nextZombie.nextTurnAt || 0)) {
+      nextZombie = turnGameZombie(nextZombie, now);
+    }
+
+    let moved = {
+      ...nextZombie,
+      x: nextZombie.x + nextZombie.vx * GAME_ZOMBIE_SPEED * dt,
+      y: nextZombie.y + nextZombie.vy * GAME_ZOMBIE_SPEED * dt,
+      facing: nextZombie.vx < -0.04 ? -1 : nextZombie.vx > 0.04 ? 1 : nextZombie.facing || 1
     };
-    const hitX = next.x < GAME_TOMATO_SIZE || next.x > GAME_ARENA.width - GAME_TOMATO_SIZE
-      || GAME_WALLS.some((wall) => gameCircleRectHit(next.x, wanderingTomato.y, GAME_TOMATO_SIZE / 2, wall));
-    const hitY = next.y < GAME_TOMATO_SIZE || next.y > GAME_ARENA.height - GAME_TOMATO_SIZE
-      || GAME_WALLS.some((wall) => gameCircleRectHit(next.x, next.y, GAME_TOMATO_SIZE / 2, wall));
+    const hitX = moved.x < GAME_ZOMBIE_RADIUS || moved.x > GAME_ARENA.width - GAME_ZOMBIE_RADIUS
+      || GAME_WALLS.some((wall) => gameCircleRectHit(moved.x, nextZombie.y, GAME_ZOMBIE_RADIUS, wall));
+    const hitY = moved.y < GAME_ZOMBIE_RADIUS || moved.y > GAME_ARENA.height - GAME_ZOMBIE_RADIUS
+      || GAME_WALLS.some((wall) => gameCircleRectHit(moved.x, moved.y, GAME_ZOMBIE_RADIUS, wall));
     if (hitX) {
-      next.x = wanderingTomato.x;
-      next = turnGameTomato({ ...next, vx: -next.vx }, now);
+      moved.x = nextZombie.x;
+      moved = target ? turnGameZombie({ ...moved, vx: -moved.vx }, now) : turnGameZombie(moved, now);
     }
     if (hitY) {
-      next.y = wanderingTomato.y;
-      next = turnGameTomato({ ...next, vy: -next.vy }, now);
+      moved.y = nextZombie.y;
+      moved = target ? turnGameZombie({ ...moved, vy: -moved.vy }, now) : turnGameZombie(moved, now);
     }
-    return unstickGameTomato(next);
+    return unstickGameZombie(moved);
   });
 }
 
-function normalizeGameTomato(tomato, now) {
-  const magnitude = Math.hypot(tomato.vx, tomato.vy) || 1;
-  return unstickGameTomato({
-    ...tomato,
-    vx: tomato.vx / magnitude,
-    vy: tomato.vy / magnitude,
-    nextTurnAt: tomato.nextTurnAt || now + randomGameTomatoTurnDelay()
+function normalizeGameZombies(zombies = []) {
+  const now = Date.now();
+  const savedZombies = Array.isArray(zombies) ? zombies : Object.values(zombies || {});
+  const source = savedZombies.length ? savedZombies : GAME_ZOMBIE_STARTS;
+  return source.slice(0, GAME_ZOMBIE_MAX).map((zombie, index) => normalizeGameZombie({
+    id: zombie.id || `zombie-${index + 1}`,
+    x: Number(zombie.x || GAME_ZOMBIE_STARTS[index]?.x || 80),
+    y: Number(zombie.y || GAME_ZOMBIE_STARTS[index]?.y || 80),
+    vx: Number(zombie.vx || GAME_ZOMBIE_STARTS[index]?.vx || 1),
+    vy: Number(zombie.vy || GAME_ZOMBIE_STARTS[index]?.vy || 0),
+    facing: Number(zombie.facing || GAME_ZOMBIE_STARTS[index]?.facing || 1),
+    alive: zombie.alive !== false,
+    deadUntil: Number(zombie.deadUntil || 0),
+    nextTurnAt: Number(zombie.nextTurnAt || 0)
+  }, now));
+}
+
+function mergeGameZombies(remote = [], local = []) {
+  const remoteZombies = normalizeGameZombies(remote);
+  const localById = Object.fromEntries(normalizeGameZombies(local).map((zombie) => [zombie.id, zombie]));
+  return remoteZombies.map((remoteZombie) => {
+    const localZombie = localById[remoteZombie.id];
+    if (!localZombie) return remoteZombie;
+    if (remoteZombie.alive === false && Number(remoteZombie.deadUntil || 0) >= Number(localZombie.deadUntil || 0)) {
+      return remoteZombie;
+    }
+    return localZombie;
   });
 }
 
-function unstickGameTomato(tomato) {
-  const radius = GAME_TOMATO_SIZE / 2;
-  let next = { ...tomato };
+function normalizeGameZombie(zombie, now) {
+  const magnitude = Math.hypot(zombie.vx, zombie.vy) || 1;
+  return unstickGameZombie({
+    ...zombie,
+    vx: zombie.vx / magnitude,
+    vy: zombie.vy / magnitude,
+    facing: zombie.vx < -0.04 ? -1 : zombie.vx > 0.04 ? 1 : zombie.facing || 1,
+    nextTurnAt: zombie.nextTurnAt || now + randomGameZombieTurnDelay()
+  });
+}
+
+function unstickGameZombie(zombie) {
+  let next = { ...zombie };
   for (let pass = 0; pass < 3; pass += 1) {
-    const wall = GAME_WALLS.find((rect) => gameCircleRectHit(next.x, next.y, radius, rect));
+    const wall = GAME_WALLS.find((rect) => gameCircleRectHit(next.x, next.y, GAME_ZOMBIE_RADIUS, rect));
     if (!wall) break;
     const moves = [
-      { axis: "x", value: wall.x - radius - 1, distance: Math.abs(next.x - (wall.x - radius - 1)) },
-      { axis: "x", value: wall.x + wall.w + radius + 1, distance: Math.abs(next.x - (wall.x + wall.w + radius + 1)) },
-      { axis: "y", value: wall.y - radius - 1, distance: Math.abs(next.y - (wall.y - radius - 1)) },
-      { axis: "y", value: wall.y + wall.h + radius + 1, distance: Math.abs(next.y - (wall.y + wall.h + radius + 1)) }
+      { axis: "x", value: wall.x - GAME_ZOMBIE_RADIUS - 1, distance: Math.abs(next.x - (wall.x - GAME_ZOMBIE_RADIUS - 1)) },
+      { axis: "x", value: wall.x + wall.w + GAME_ZOMBIE_RADIUS + 1, distance: Math.abs(next.x - (wall.x + wall.w + GAME_ZOMBIE_RADIUS + 1)) },
+      { axis: "y", value: wall.y - GAME_ZOMBIE_RADIUS - 1, distance: Math.abs(next.y - (wall.y - GAME_ZOMBIE_RADIUS - 1)) },
+      { axis: "y", value: wall.y + wall.h + GAME_ZOMBIE_RADIUS + 1, distance: Math.abs(next.y - (wall.y + wall.h + GAME_ZOMBIE_RADIUS + 1)) }
     ].sort((a, b) => a.distance - b.distance);
     const move = moves.find((candidate) => {
       const x = candidate.axis === "x" ? candidate.value : next.x;
       const y = candidate.axis === "y" ? candidate.value : next.y;
-      return x >= radius && x <= GAME_ARENA.width - radius && y >= radius && y <= GAME_ARENA.height - radius;
+      return x >= GAME_ZOMBIE_RADIUS && x <= GAME_ARENA.width - GAME_ZOMBIE_RADIUS && y >= GAME_ZOMBIE_RADIUS && y <= GAME_ARENA.height - GAME_ZOMBIE_RADIUS;
     }) || moves[0];
     next = {
       ...next,
       [move.axis]: move.axis === "x"
-        ? gameClamp(move.value, radius, GAME_ARENA.width - radius)
-        : gameClamp(move.value, radius, GAME_ARENA.height - radius)
+        ? gameClamp(move.value, GAME_ZOMBIE_RADIUS, GAME_ARENA.width - GAME_ZOMBIE_RADIUS)
+        : gameClamp(move.value, GAME_ZOMBIE_RADIUS, GAME_ARENA.height - GAME_ZOMBIE_RADIUS)
     };
   }
   return next;
 }
 
-function turnGameTomato(tomato, now) {
-  const angle = Math.atan2(tomato.vy, tomato.vx) + gameRandomBetween(-1.15, 1.15);
+function turnGameZombie(zombie, now) {
+  const angle = Math.atan2(zombie.vy, zombie.vx) + gameRandomBetween(-1.25, 1.25);
   return {
-    ...tomato,
+    ...zombie,
     vx: Math.cos(angle),
     vy: Math.sin(angle),
-    nextTurnAt: now + randomGameTomatoTurnDelay()
+    facing: Math.cos(angle) < 0 ? -1 : 1,
+    nextTurnAt: now + randomGameZombieTurnDelay()
   };
 }
 
-function randomGameTomatoTurnDelay() {
-  return gameRandomBetween(GAME_TOMATO_TURN_MIN_MS, GAME_TOMATO_TURN_MAX_MS);
+function randomGameZombieTurnDelay() {
+  return gameRandomBetween(GAME_ZOMBIE_TURN_MIN_MS, GAME_ZOMBIE_TURN_MAX_MS);
+}
+
+function closestGameZombieTarget(zombie, players = {}) {
+  return Object.values(players)
+    .filter((player) => player.alive && !(player.deadUntil && Date.now() < player.deadUntil))
+    .map((player) => ({ player, distance: gameDistance(zombie.x, zombie.y, player.x, player.y) }))
+    .filter(({ distance }) => distance <= GAME_ZOMBIE_AGGRO_RADIUS)
+    .sort((a, b) => a.distance - b.distance)[0]?.player || null;
+}
+
+function randomGameZombieSpawn(players = {}, zombies = []) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const x = GAME_ZOMBIE_RADIUS + 28 + Math.random() * (GAME_ARENA.width - (GAME_ZOMBIE_RADIUS + 28) * 2);
+    const y = GAME_ZOMBIE_RADIUS + 28 + Math.random() * (GAME_ARENA.height - (GAME_ZOMBIE_RADIUS + 28) * 2);
+    const blocked = GAME_WALLS.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS + 4, wall))
+      || Object.values(players || {}).some((player) => gameDistance(x, y, player.x, player.y) < GAME_PLAYER_SIZE * 1.35)
+      || (zombies || []).some((zombie) => zombie.alive && gameDistance(x, y, zombie.x, zombie.y) < GAME_ZOMBIE_SIZE * 1.35);
+    if (!blocked) {
+      const angle = Math.random() * Math.PI * 2;
+      return { x, y, vx: Math.cos(angle), vy: Math.sin(angle), facing: Math.cos(angle) < 0 ? -1 : 1 };
+    }
+  }
+  return null;
+}
+
+function gameZombieSignature(zombies = []) {
+  return (zombies || []).map((zombie) => [
+    zombie.id,
+    Math.round(Number(zombie.x || 0)),
+    Math.round(Number(zombie.y || 0)),
+    zombie.alive === false ? 0 : 1,
+    Math.round(Number(zombie.deadUntil || 0) / 100)
+  ].join(":")).join("|");
 }
 
 function pruneGamePlayers(players) {
@@ -1465,7 +1584,9 @@ function drawGame() {
   ctx.fillRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
   drawGameGrid(ctx);
   gameState.walls.forEach((wall) => drawGameWall(ctx, wall));
-  gameState.tomatoes.forEach((tomato) => drawGameTomato(ctx, tomato));
+  gameState.zombies.forEach((zombie) => {
+    if (zombie.alive) drawGameZombie(ctx, zombie);
+  });
   Object.values(gameState.pepperoniPickups || {}).forEach((pickup) => drawGamePepperoniPickup(ctx, pickup));
   Object.values(gameState.projectiles).forEach((shot) => drawGamePizzaShot(ctx, shot));
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
@@ -1553,31 +1674,36 @@ function drawGameWall(ctx, wall) {
   ctx.stroke();
 }
 
-function drawGameTomato(ctx, tomato) {
+function drawGameZombie(ctx, zombie) {
   ctx.save();
-  ctx.translate(tomato.x, tomato.y);
-  ctx.fillStyle = "#e63946";
-  ctx.strokeStyle = "#7a1721";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.arc(0, 0, GAME_TOMATO_SIZE / 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#3ddc97";
-  ctx.beginPath();
-  ctx.moveTo(-7, -12);
-  ctx.lineTo(0, -20);
-  ctx.lineTo(7, -12);
-  ctx.lineTo(2, -14);
-  ctx.lineTo(0, -8);
-  ctx.lineTo(-2, -14);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = "rgba(255, 244, 223, 0.8)";
-  ctx.beginPath();
-  ctx.arc(-4, -4, 3, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.translate(zombie.x, zombie.y);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.42)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  const image = getGameZombieImage();
+  const width = GAME_ZOMBIE_SIZE;
+  const height = GAME_ZOMBIE_SIZE * 1.22;
+  const facing = Number(zombie.facing || zombie.vx || 1) < 0 ? -1 : 1;
+  if (image?.complete && image.naturalWidth) {
+    ctx.scale(facing, 1);
+    ctx.drawImage(image, -width / 2, -height / 2, width, height);
+  } else {
+    ctx.fillStyle = "#65d06f";
+    ctx.strokeStyle = "#13391c";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, GAME_ZOMBIE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
   ctx.restore();
+}
+
+function getGameZombieImage() {
+  if (gameZombieImage) return gameZombieImage;
+  gameZombieImage = new Image();
+  gameZombieImage.src = GAME_ZOMBIE_IMAGE_SRC;
+  return gameZombieImage;
 }
 
 function drawGamePepperoniPickup(ctx, pickup) {
@@ -1709,7 +1835,7 @@ function randomGameSpawn() {
     const x = radius + 4 + Math.random() * (GAME_ARENA.width - (radius + 4) * 2);
     const y = radius + 4 + Math.random() * (GAME_ARENA.height - (radius + 4) * 2);
     const blocked = state.walls.some((rect) => gameCircleRectHit(x, y, radius, rect))
-      || state.tomatoes.some((tomato) => gameDistance(x, y, tomato.x, tomato.y) < radius + 72);
+      || (state.zombies || []).some((zombie) => zombie.alive && gameDistance(x, y, zombie.x, zombie.y) < radius + 72);
     if (!blocked) return { x, y };
   }
   return { x: radius + 24, y: radius + 24 };
