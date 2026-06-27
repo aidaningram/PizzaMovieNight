@@ -1167,7 +1167,21 @@ label {
 .pizza-game-hud {
   display: flex;
   justify-content: flex-end;
+  min-height: 46px;
   gap: 8px;
+}
+
+.game-back-button {
+  justify-self: start;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(33, 30, 45, 0.9);
+  color: var(--ink);
+  font-size: 1.4rem;
+  font-weight: 950;
+  box-shadow: var(--shadow);
 }
 
 .match-leaderboard {
@@ -1262,6 +1276,7 @@ label {
   gap: 8px;
   grid-template-columns: 118px 1fr;
   align-items: center;
+  justify-items: center;
   padding: 8px;
 }
 
@@ -1431,6 +1446,8 @@ label {
   .mobile-controls {
     display: grid;
     grid-template-columns: 104px 1fr;
+    align-items: center;
+    justify-items: center;
     gap: 12px;
   }
 
@@ -1445,6 +1462,7 @@ label {
   }
 
   .fire-button {
+    width: 100%;
     min-height: 70px;
   }
 
