@@ -42,6 +42,7 @@ const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
 const GAME_PIZZA_SPEED = 520;
 const GAME_PIZZA_LIFE_MS = 1300;
+const GAME_PIZZA_PROJECTILE_SIZE = 20;
 const GAME_PIZZA_BOUNDS_PADDING = 80;
 const GAME_RESPAWN_MS = 2600;
 const GAME_TOMATO_SIZE = 26;
@@ -51,7 +52,7 @@ const GAME_TOMATO_TURN_MAX_MS = 1700;
 const GAME_PEPPERONI_PICKUP_SIZE = 22;
 const GAME_MAX_MAP_PEPPERONI = 15;
 const GAME_MAX_PLAYER_PEPPERONI = 10;
-const GAME_PEPPERONI_SPAWN_MS = 4000;
+const GAME_PEPPERONI_SPAWN_MS = 120000;
 const GAME_HEARTBEAT_MS = 45;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_REMOTE_PLAYER_SMOOTHING = 18;
@@ -1369,13 +1370,17 @@ function pruneGameProjectiles(projectiles, now) {
   const next = {};
   Object.values(projectiles || {}).forEach((shot) => {
     if (gameRemovedProjectileIds.has(shot.id)) return;
-    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS || !gameProjectileInBounds(shot)) {
+    if (now - shot.createdAt > GAME_PIZZA_LIFE_MS || !gameProjectileInBounds(shot) || gameProjectileHitsWall(shot)) {
       gameRemovedProjectileIds.add(shot.id);
       return;
     }
     next[shot.id] = { ...shot };
   });
   return next;
+}
+
+function gameProjectileHitsWall(shot) {
+  return GAME_WALLS.some((wall) => gameCircleRectHit(shot.x, shot.y, GAME_PIZZA_PROJECTILE_SIZE / 2, wall));
 }
 
 function gameProjectileInBounds(shot) {
@@ -1659,18 +1664,18 @@ function drawGamePlayer(ctx, player) {
   ctx.stroke();
 
   const pepperoniSpots = [
-    { x: -12, y: -9, r: 7 },
-    { x: 7, y: 11, r: 6 },
-    { x: 20, y: -5, r: 5 },
-    { x: -24, y: 12, r: 5 },
-    { x: 0, y: -21, r: 5 },
-    { x: 27, y: 9, r: 4.5 }
+    { x: -10, y: -8, r: 6.5 },
+    { x: 4, y: 9, r: 6 },
+    { x: 17, y: -4, r: 5.5 },
+    { x: -20, y: 10, r: 5 },
+    { x: -2, y: -18, r: 5 },
+    { x: 20, y: 9, r: 4.5 }
   ];
   const pepperoniCount = Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0));
   for (let index = 0; index < pepperoniCount; index += 1) {
     const spot = pepperoniSpots[index % pepperoniSpots.length];
     const stack = Math.floor(index / pepperoniSpots.length);
-    drawGamePepperoniDisk(ctx, spot.x + stack * 3, spot.y - stack * 3, Math.max(3.5, spot.r - stack * 1.2), 1.7);
+    drawGamePepperoniDisk(ctx, spot.x + stack * 2, spot.y - stack * 2, Math.max(4, spot.r - stack * 0.9), 1.7);
   }
 
   ctx.fillStyle = player.color;
@@ -1694,7 +1699,7 @@ function drawGamePlayer(ctx, player) {
 }
 
 function drawGamePizzaShot(ctx, shot) {
-  drawGamePepperoniDisk(ctx, shot.x, shot.y, 10, 3);
+  drawGamePepperoniDisk(ctx, shot.x, shot.y, GAME_PIZZA_PROJECTILE_SIZE / 2, 3);
 }
 
 function randomGameSpawn() {
