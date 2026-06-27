@@ -40,6 +40,7 @@ const GAME_VERSION = 14;
 const GAME_ARENA = { width: 960, height: 1120 };
 const GAME_PLAYER_SIZE = 72;
 const GAME_PLAYER_SPEED = 235;
+const GAME_MEATBALL_SPEED_MULTIPLIER = 0.85;
 const GAME_PIZZA_SPEED = 520;
 const GAME_PIZZA_LIFE_MS = 1300;
 const GAME_PIZZA_PROJECTILE_SIZE = 20;
@@ -1060,7 +1061,8 @@ function updateLocalGame(dt, now) {
       gameAim = vector;
       player.aimX = vector.x;
       player.aimY = vector.y;
-      const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * GAME_PLAYER_SPEED * dt, vector.y * GAME_PLAYER_SPEED * dt, gamePlayerHitRadius(player));
+      const speed = gamePlayerMoveSpeed(player);
+      const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * speed * dt, vector.y * speed * dt, gamePlayerHitRadius(player));
       player.x = next.x;
       player.y = next.y;
     }
@@ -1442,6 +1444,10 @@ function normalizeGamePlayerPowerup(player, now = Date.now()) {
 
 function gamePlayerHitRadius(player) {
   return player?.powerup === "meatball" ? GAME_MEATBALL_SIZE / 2 : GAME_PLAYER_SIZE / 2;
+}
+
+function gamePlayerMoveSpeed(player) {
+  return player?.powerup === "meatball" ? GAME_PLAYER_SPEED * GAME_MEATBALL_SPEED_MULTIPLIER : GAME_PLAYER_SPEED;
 }
 
 function moveGameZombies(zombies, players, dt, now = Date.now()) {
