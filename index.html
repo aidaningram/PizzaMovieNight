@@ -292,45 +292,46 @@
           </section>
 
           <section id="game-play-panel" class="game-play-panel" hidden>
-          <button id="game-back-menu-button" class="game-back-button" type="button" aria-label="Back to Pizza Arena menu">←</button>
-          <section class="pizza-game-topbar">
-            <div>
-              <p class="eyebrow">Pizza Arena</p>
-              <h1 class="page-title">Pizza Arena</h1>
-            </div>
-            <div id="game-connection-status" class="game-status-pill">Loading</div>
-          </section>
-
-          <ol id="match-leaderboard" class="match-leaderboard" hidden></ol>
-
-          <section class="pizza-arena-wrap">
-            <canvas id="game-canvas" width="960" height="1120" aria-label="Pizza Arena game"></canvas>
-            <div id="arena-status" class="arena-status">Loading</div>
-            <div id="game-overlay" class="game-overlay" hidden>
-              <h2>Pizza Arena</h2>
-              <p>Joining the family arena...</p>
-            </div>
-            <section id="match-end-panel" class="match-end-panel" hidden>
-              <p class="eyebrow">Match Complete</p>
-              <h2>Final Scores</h2>
-              <ol id="final-match-leaderboard" class="match-leaderboard final"></ol>
-              <div class="match-end-actions">
-                <button id="return-game-menu-button" class="secondary-action" type="button">Return to menu</button>
-                <button id="end-free-play-button" class="primary-action" type="button">Free Play</button>
+            <button id="game-back-menu-button" class="game-back-button" type="button" aria-label="Back to Pizza Arena menu">←</button>
+            <section class="pizza-game-topbar">
+              <div>
+                <p class="eyebrow">Pizza Arena</p>
+                <h1 class="page-title">Pizza Arena</h1>
               </div>
+              <div id="game-connection-status" class="game-status-pill">Loading</div>
             </section>
-          </section>
 
-          <section class="pizza-game-hud">
-            <button id="shoot-button" class="shoot-button" type="button">Shoot pizza</button>
-          </section>
+            <section class="pizza-arena-wrap">
+              <canvas id="game-canvas" width="960" height="1120" aria-label="Pizza Arena game"></canvas>
+              <div id="arena-status" class="arena-status">Loading</div>
+              <div id="game-overlay" class="game-overlay" hidden>
+                <h2>Pizza Arena</h2>
+                <p>Joining the family arena...</p>
+              </div>
+              <section id="match-end-panel" class="match-end-panel" hidden>
+                <p class="eyebrow">Match Complete</p>
+                <h2>Final Scores</h2>
+                <ol id="final-match-leaderboard" class="match-leaderboard final"></ol>
+                <div class="match-end-actions">
+                  <button id="return-game-menu-button" class="secondary-action" type="button">Return to menu</button>
+                  <button id="end-free-play-button" class="primary-action" type="button">Free Play</button>
+                </div>
+              </section>
+            </section>
 
-          <section class="mobile-controls" aria-label="Game controls">
-            <div id="joystick" class="joystick" aria-label="Movement joystick">
-              <div id="joystick-thumb" class="joystick-thumb"></div>
-            </div>
-            <button id="mobile-shoot-button" class="fire-button" type="button">Fire</button>
-          </section>
+            <ol id="match-leaderboard" class="match-leaderboard" hidden></ol>
+
+            <section class="pizza-game-hud">
+              <button id="shoot-button" class="shoot-button" type="button">Shoot pizza</button>
+            </section>
+
+            <section class="mobile-controls" aria-label="Game controls">
+              <div id="joystick" class="joystick" aria-label="Movement joystick">
+                <div id="joystick-thumb" class="joystick-thumb"></div>
+              </div>
+              <button id="mobile-shoot-button" class="fire-button" type="button">Fire</button>
+            </section>
+            <section id="spectator-panel" class="spectator-panel" hidden>You are a spectator</section>
           </section>
         </section>
       </main>

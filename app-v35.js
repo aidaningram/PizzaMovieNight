@@ -1002,12 +1002,7 @@ async function leaveGamePlayer() {
   };
   if (leavingActiveMatch) {
     patch[`match/participants/${currentUser.uid}`] = null;
-    patch[`match/scores/${currentUser.uid}`] = null;
-    patch[`match/finalScores/${currentUser.uid}`] = null;
     patch[`match/removed/${currentUser.uid}`] = true;
-  }
-  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {});
-  if (leavingActiveMatch) {
     const nextMatch = {
       ...(match || {}),
       participants: { ...(match.participants || {}) },
@@ -1016,8 +1011,15 @@ async function leaveGamePlayer() {
       removed: { ...(match.removed || {}), [currentUser.uid]: true }
     };
     delete nextMatch.participants[currentUser.uid];
-    delete nextMatch.scores[currentUser.uid];
-    delete nextMatch.finalScores[currentUser.uid];
+    const activeLeft = Object.keys(nextMatch.participants || {}).filter((uid) => !nextMatch.removed?.[uid]);
+    if (activeLeft.length <= 1) {
+      nextMatch.status = "ended";
+      nextMatch.finalScores = { ...(nextMatch.scores || {}) };
+      nextMatch.queued = {};
+      patch["match/status"] = "ended";
+      patch["match/finalScores"] = nextMatch.finalScores;
+      patch["match/queued"] = null;
+    }
     familyData = {
       ...familyData,
       gameArena: {
@@ -1026,6 +1028,7 @@ async function leaveGamePlayer() {
       }
     };
   }
+  await services.rtdbFns.update(gameArenaRef(), patch).catch(() => {});
 }
 
 function clearGameQueue() {
@@ -1086,6 +1089,9 @@ function updateGameModePanels() {
   const shootButton = document.querySelector("#shoot-button");
   const mobileShootButton = document.querySelector("#mobile-shoot-button");
   const backButton = document.querySelector("#game-back-menu-button");
+  const hud = document.querySelector(".pizza-game-hud");
+  const mobileControls = document.querySelector(".mobile-controls");
+  const spectatorPanel = document.querySelector("#spectator-panel");
   const note = document.querySelector("#match-queue-note");
   const liveLeaderboard = document.querySelector("#match-leaderboard");
   const endPanel = document.querySelector("#match-end-panel");
@@ -1103,6 +1109,9 @@ function updateGameModePanels() {
   if (backButton) backButton.hidden = !showPlay;
   if (shootButton) shootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
   if (mobileShootButton) mobileShootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
+  if (hud) hud.hidden = gameViewMode === "spectate";
+  if (mobileControls) mobileControls.hidden = gameViewMode === "spectate";
+  if (spectatorPanel) spectatorPanel.hidden = gameViewMode !== "spectate";
   if (endPanel) endPanel.hidden = !gameMatchEnded(match);
 
   if (freeButton) freeButton.disabled = inProgress && !isParticipant;
@@ -1304,6 +1313,7 @@ function receiveGameSnapshot() {
 function syncGameViewWithMatch(remoteGame) {
   const match = remoteGame.match;
   if (gameMatchInProgress(match) && match.removed?.[currentUser?.uid]) {
+    if (gameViewMode === "menu") return;
     gameViewMode = "spectate";
     gameSpectating = true;
     gameLocalPlayer = null;
@@ -1423,10 +1433,6 @@ function mergeGameMatch(remoteMatch = {}, localMatch = {}) {
   const queued = status === "active" ? {} : { ...remote.queued, ...local.queued };
   const scores = mergeGameScoreMaps(remote.scores, local.scores, participants);
   const finalScores = mergeGameScoreMaps(remote.finalScores, local.finalScores, participants);
-  Object.keys(removed).forEach((uid) => {
-    delete scores[uid];
-    delete finalScores[uid];
-  });
   return {
     ...remote,
     ...local,
@@ -1715,11 +1721,14 @@ function gameCountdownText(match = {}, now = Date.now()) {
 function maybeFinishGameMatch(now = Date.now()) {
   const arena = normalizeGame(gameState || familyData?.gameArena);
   const match = arena.match;
-  if (match.status !== "active" || now < Number(match.endsAt || 0)) return;
+  if (match.status !== "active") return;
+  const activeParticipants = activeGameMatchParticipants(match);
+  const shouldEndEarly = activeParticipants.length <= 1;
+  if (!shouldEndEarly && now < Number(match.endsAt || 0)) return;
   const participantMap = match.participants || {};
-  const host = gameHostUid(participantMap);
+  const host = gameHostUid(Object.fromEntries(activeParticipants.map((uid) => [uid, participantMap[uid]])));
   if (host !== currentUser?.uid) return;
-  const finalScores = normalizeMatchScores(match.scores, participantMap);
+  const finalScores = { ...(match.scores || {}) };
   const nextArena = {
     ...arena,
     projectiles: {},
@@ -1734,6 +1743,10 @@ function maybeFinishGameMatch(now = Date.now()) {
   gameState = nextArena;
   writeGameArenaSharedState(nextArena);
   updateGameModePanels();
+}
+
+function activeGameMatchParticipants(match = {}) {
+  return Object.keys(match.participants || {}).filter((uid) => !match.removed?.[uid]);
 }
 
 function normalizeMatchScores(scores = {}, participants = {}) {
