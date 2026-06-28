@@ -1582,10 +1582,13 @@ body.game-playing .game-page .page-header {
   }
 
   .pizza-arena-wrap {
-    width: min(88vw, 42dvh);
+    width: min(
+      100vw,
+      calc((100dvh - 42px - var(--game-leaderboard-height) - var(--game-control-height) - (var(--game-play-gap) * 3) - max(12px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom))) * 0.857)
+    );
     height: auto;
     max-width: 100vw;
-    align-self: end;
+    align-self: start;
     margin-right: auto;
     margin-left: auto;
     border-right: 0;
