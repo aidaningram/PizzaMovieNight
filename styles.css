@@ -1469,10 +1469,14 @@ body.game-playing .game-page .page-header {
   }
 
   .game-play-panel {
-    grid-template-rows: 42px 0 auto 110px auto auto;
+    --game-control-height: 112px;
+    --game-leaderboard-height: 110px;
+    --game-play-gap: 5px;
+    --game-arena-max-height: calc(100dvh - max(4px, env(safe-area-inset-top)) - max(4px, env(safe-area-inset-bottom)) - 42px - var(--game-leaderboard-height) - var(--game-control-height) - 22px);
+    grid-template-rows: 42px 0 auto var(--game-leaderboard-height) var(--game-control-height) auto;
     height: 100%;
     min-height: 0;
-    gap: 5px;
+    gap: var(--game-play-gap);
     align-content: start;
   }
 
@@ -1575,7 +1579,7 @@ body.game-playing .game-page .page-header {
   }
 
   .pizza-arena-wrap {
-    width: min(100vw, 50dvh);
+    width: min(100vw, calc(var(--game-arena-max-height) * 960 / 1120));
     height: auto;
     max-width: 100vw;
     margin-right: auto;
@@ -1592,9 +1596,11 @@ body.game-playing .game-page .page-header {
   }
 
   .match-leaderboard {
-    min-height: 110px;
-    max-height: 110px;
+    min-height: var(--game-leaderboard-height);
+    max-height: var(--game-leaderboard-height);
     overflow: hidden;
+    position: relative;
+    z-index: 1;
   }
 
   .match-leaderboard li {
@@ -1620,12 +1626,15 @@ body.game-playing .game-page .page-header {
   }
 
   .mobile-controls {
+    position: relative;
+    z-index: 1;
     display: grid;
     grid-template-columns: 104px 1fr;
     align-items: center;
     justify-items: center;
     gap: 12px;
-    min-height: 112px;
+    min-height: var(--game-control-height);
+    height: var(--game-control-height);
     padding-top: 6px;
     padding-bottom: 6px;
   }
