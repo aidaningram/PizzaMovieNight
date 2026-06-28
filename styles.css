@@ -1197,11 +1197,10 @@ body.game-playing .game-page .page-header {
 
 .pizza-arena-wrap {
   position: relative;
-  align-self: stretch;
+  align-self: start;
   justify-self: center;
-  height: 100%;
-  width: auto;
-  max-width: 100%;
+  height: auto;
+  width: min(100%, 620px);
   margin: 0 auto;
   aspect-ratio: 960 / 1120;
   border: 1px solid var(--line);
