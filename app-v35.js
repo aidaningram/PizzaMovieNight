@@ -2248,6 +2248,16 @@ function addGameExplosionEffect(x, y, radius, now = Date.now()) {
       [effect.id]: effect
     };
   }
+  writeGameExplosionEffect(effect);
+  return effect;
+}
+
+function writeGameExplosionEffect(effect) {
+  if (!FIREBASE_READY || !effect?.id) return;
+  services.rtdbFns.update(gameArenaRef(), {
+    [`explosionEffects/${effect.id}`]: effect,
+    updatedAt: Date.now()
+  }).catch(() => {});
 }
 
 function killGamePlayerByUid(victimUid, killerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, hitPrefix) {
