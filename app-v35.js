@@ -974,7 +974,8 @@ function enterGameFreePlay() {
   const match = normalizeGame(familyData?.gameArena).match;
   if (gameMatchInProgress(match) && !gameMatchParticipant(match, currentUser?.uid)) return;
   if (gameMatchEnded(match)) {
-    const fresh = { ...defaultGameState(), lobby: normalizeGame(familyData?.gameArena).lobby };
+    const currentArena = normalizeGame(familyData?.gameArena);
+    const fresh = { ...defaultGameState(), lobby: currentArena.lobby, records: currentArena.records };
     gameState = fresh;
     writeFullGameArena(fresh);
   }
@@ -1047,9 +1048,13 @@ async function leaveGamePlayerWithOptions({ offline = false, forceMatchExit = fa
   const arena = normalizeGame(familyData?.gameArena || gameState);
   const match = arena.match;
   const leavingActiveMatch = gameMatchInProgress(match) && (forceMatchExit || gameMatchParticipant(match, currentUser.uid));
+  const leavingFreePlay = arena.players?.[currentUser.uid]?.mode === "free" || gameViewMode === "free";
+  let records = leavingFreePlay ? applyFreeplayRecordForCurrentUser(arena) : normalizeGameRecords(arena.records);
   const patch = {
     [`players/${currentUser.uid}`]: null,
     [`match/queued/${currentUser.uid}`]: null,
+    [`freeScores/${currentUser.uid}`]: leavingFreePlay ? null : arena.freeScores?.[currentUser.uid] || null,
+    records,
     [`lobby/${currentUser.uid}`]: offline ? null : gameLobbyEntry(gameViewMode),
     updatedAt: Date.now()
   };
@@ -1069,15 +1074,30 @@ async function leaveGamePlayerWithOptions({ offline = false, forceMatchExit = fa
       nextMatch.status = "ended";
       nextMatch.finalScores = { ...(nextMatch.scores || {}) };
       nextMatch.queued = {};
+      records = applyMatchRecords({ ...arena, match: nextMatch, records });
       patch["match/status"] = "ended";
       patch["match/finalScores"] = nextMatch.finalScores;
       patch["match/queued"] = null;
+      patch.records = records;
     }
     familyData = {
       ...familyData,
       gameArena: {
         ...(familyData?.gameArena || {}),
+        records,
         match: nextMatch
+      }
+    };
+  }
+  if (leavingFreePlay) {
+    const freeScores = { ...(arena.freeScores || {}) };
+    delete freeScores[currentUser.uid];
+    familyData = {
+      ...familyData,
+      gameArena: {
+        ...(familyData?.gameArena || {}),
+        records,
+        freeScores
       }
     };
   }
@@ -1162,6 +1182,7 @@ function updateGameModePanels() {
   const note = document.querySelector("#match-queue-note");
   const liveLeaderboard = document.querySelector("#match-leaderboard");
   const endPanel = document.querySelector("#match-end-panel");
+  const recordsPanel = document.querySelector("#game-records-panel");
   const active = gameActiveContestants(arena);
   const queuedCount = active.filter((entry) => match.queued?.[entry.uid]).length;
   const isQueued = Boolean(gameMatchQueued || match.queued?.[currentUser?.uid]);
@@ -1180,6 +1201,7 @@ function updateGameModePanels() {
   if (mobileControls) mobileControls.hidden = gameViewMode === "spectate";
   if (spectatorPanel) spectatorPanel.hidden = gameViewMode !== "spectate";
   if (endPanel) endPanel.hidden = !gameMatchEnded(match);
+  if (recordsPanel) recordsPanel.hidden = showPlay;
 
   if (freeButton) freeButton.disabled = inProgress && !isParticipant;
   if (startButton) {
@@ -1197,6 +1219,8 @@ function updateGameModePanels() {
   }
 
   renderMatchLeaderboard();
+  renderGameRecords();
+  renderAmmoDisplay();
 }
 
 function joinGameArena(mode = "free") {
@@ -1207,6 +1231,12 @@ function joinGameArena(mode = "free") {
   player.mode = mode;
   const next = normalizeGame(familyData?.gameArena);
   const leaderboard = next.leaderboard || {};
+  const freeScores = mode === "free"
+    ? {
+      ...(next.freeScores || {}),
+      [currentUser.uid]: { uid: currentUser.uid, name: displayName(), xp: 0, startedAt: Date.now() }
+    }
+    : next.freeScores || {};
   gameLocalPlayer = player;
   gameState = {
     ...next,
@@ -1219,6 +1249,7 @@ function joinGameArena(mode = "free") {
       [currentUser.uid]: gameLobbyEntry(mode)
     },
     leaderboard,
+    freeScores,
     updatedAt: Date.now()
   };
   writeGameArena(gameState);
@@ -1353,6 +1384,7 @@ async function startGameMatch(contestants) {
   }));
   const nextArena = {
     ...defaultGameState(),
+    records: normalizeGame(familyData?.gameArena).records,
     players,
     lobby: Object.fromEntries(contestants.map((entry) => [entry.uid, { ...entry, mode: "match", queued: false, lastSeen: now }])),
     match: {
@@ -1460,11 +1492,20 @@ function defaultGameState() {
     collectedPickups: {},
     lastPepperoniSpawnAt: Date.now() - GAME_PEPPERONI_SPAWN_MS,
     leaderboard: {},
+    freeScores: {},
+    records: defaultGameRecords(),
     match: defaultGameMatchState(),
     lobby: {},
     hits: {},
     killLog: [],
     updatedAt: Date.now()
+  };
+}
+
+function defaultGameRecords() {
+  return {
+    freeplay: [],
+    matches: []
   };
 }
 
@@ -1499,11 +1540,33 @@ function normalizeGame(value) {
     collectedPickups: useCurrentMap ? pruneGameTimedMap(value?.collectedPickups || {}, Date.now(), GAME_PICKUP_CLAIM_TTL_MS) : {},
     lastPepperoniSpawnAt: useCurrentMap ? Number(value?.lastPepperoniSpawnAt || fallback.lastPepperoniSpawnAt) : fallback.lastPepperoniSpawnAt,
     leaderboard: value?.leaderboard || {},
+    freeScores: value?.freeScores || {},
+    records: normalizeGameRecords(value?.records),
     match,
     lobby: pruneGameLobby(value?.lobby || {}, Date.now()),
     hits: value?.hits || {},
     killLog: value?.killLog || []
   };
+}
+
+function normalizeGameRecords(records = {}) {
+  return {
+    freeplay: normalizeGameRecordRows(records?.freeplay),
+    matches: normalizeGameRecordRows(records?.matches)
+  };
+}
+
+function normalizeGameRecordRows(rows = []) {
+  return [...(Array.isArray(rows) ? rows : Object.values(rows || {}))]
+    .filter((row) => row?.uid && Number(row.xp || 0) > 0)
+    .map((row) => ({
+      uid: row.uid,
+      name: row.name || "Player",
+      xp: Number(row.xp || 0),
+      createdAt: Number(row.createdAt || Date.now())
+    }))
+    .sort((a, b) => b.xp - a.xp || a.createdAt - b.createdAt)
+    .slice(0, 3);
 }
 
 function normalizeGameMatch(match = {}) {
@@ -1609,6 +1672,18 @@ function gameTimedMapSignature(items = {}) {
     .join("|");
 }
 
+function gameScoreSignature(state = {}) {
+  const matchScores = Object.values(state?.match?.scores || {})
+    .map((row) => `${row.uid}:${Number(row.xp || 0)}`)
+    .sort()
+    .join("|");
+  const freeScores = Object.values(state?.freeScores || {})
+    .map((row) => `${row.uid}:${Number(row.xp || 0)}`)
+    .sort()
+    .join("|");
+  return `${matchScores}::${freeScores}`;
+}
+
 function filterGameAvailablePickups(pickups = {}, collectedPickups = {}) {
   return Object.fromEntries(Object.entries(pickups || {}).filter(([id]) => !collectedPickups?.[id] && !gameConsumedPickupIds.has(id)));
 }
@@ -1666,6 +1741,7 @@ function updateLocalGame(dt, now) {
   const player = { ...gameLocalPlayer };
   normalizeGamePlayerPowerup(player, now);
   const hitCountBefore = Object.keys(gameState.hits || {}).length;
+  const scoreSignatureBefore = gameScoreSignature(gameState);
   const hits = pruneGameHits(gameState.hits || {}, now);
   const incomingHit = hits[currentUser.uid];
   const isRespawning = player.deadUntil && now < player.deadUntil;
@@ -1751,6 +1827,8 @@ function updateLocalGame(dt, now) {
     collectedPickups,
     lastPepperoniSpawnAt,
     leaderboard,
+    freeScores: gameState.freeScores || {},
+    records: normalizeGameRecords(gameState.records),
     match: gameState.match || activeMatch,
     hits,
     killLog: nextKillLog.slice(-20),
@@ -1765,6 +1843,7 @@ function updateLocalGame(dt, now) {
   const sharedArenaChanged = Object.keys(hits).length !== hitCountBefore
     || Object.keys(projectiles).length !== projectileCountBefore
     || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore
+    || gameScoreSignature(gameState) !== scoreSignatureBefore
     || zombieSharedChanged
     || collectedSharedChanged
     || zombieDeathsSharedChanged;
@@ -1808,6 +1887,8 @@ async function syncLocalGame(now) {
     collectedPickups: syncedCollectedPickups || {},
     lastPepperoniSpawnAt: Number(syncedLastPepperoniSpawnAt || 0),
     leaderboard,
+    freeScores: nextGame.freeScores || {},
+    records: normalizeGameRecords(nextGame.records),
     match: syncedMatch,
     hits,
     killLog: (nextGame.killLog || []).slice(-20),
@@ -1853,9 +1934,17 @@ function maybeFinishGameMatch(now = Date.now()) {
     : currentUser?.uid;
   if (host !== currentUser?.uid) return;
   const finalScores = { ...(match.scores || {}) };
+  const records = applyMatchRecords({
+    ...arena,
+    match: {
+      ...match,
+      finalScores
+    }
+  });
   const nextArena = {
     ...arena,
     projectiles: {},
+    records,
     match: {
       ...match,
       status: "ended",
@@ -1882,7 +1971,11 @@ function normalizeMatchScores(scores = {}, participants = {}) {
 }
 
 function awardGameXp(uid, amount) {
-  if (!uid || !gameState?.match || gameState.match.status !== "active") return;
+  if (!uid || !gameState) return;
+  if (gameState.match?.status !== "active") {
+    awardGameFreeXp(uid, amount);
+    return;
+  }
   if (!gameMatchParticipant(gameState.match, uid)) return;
   if (Date.now() < Number(gameState.match.startedAt || 0) || Date.now() >= Number(gameState.match.endsAt || 0)) return;
   const participant = gameState.match.participants?.[uid] || gameState.players?.[uid] || { uid, name: "Player" };
@@ -1901,6 +1994,47 @@ function awardGameXp(uid, amount) {
   };
 }
 
+function awardGameFreeXp(uid, amount) {
+  if (!uid || gameViewMode !== "free") return;
+  const player = gameState?.players?.[uid] || gameLocalPlayer || { uid, name: displayName() };
+  const current = gameState.freeScores?.[uid] || { uid, name: player.name || "Player", xp: 0, startedAt: Date.now() };
+  gameState.freeScores = {
+    ...(gameState.freeScores || {}),
+    [uid]: {
+      ...current,
+      uid,
+      name: player.name || current.name || "Player",
+      xp: Number(current.xp || 0) + amount
+    }
+  };
+}
+
+function updateGameRecord(records = defaultGameRecords(), boardName, row) {
+  if (!row?.uid || Number(row.xp || 0) <= 0) return normalizeGameRecords(records);
+  const current = normalizeGameRecords(records);
+  current[boardName] = normalizeGameRecordRows([...(current[boardName] || []), {
+    uid: row.uid,
+    name: row.name || "Player",
+    xp: Number(row.xp || 0),
+    createdAt: Date.now()
+  }]);
+  return current;
+}
+
+function applyFreeplayRecordForCurrentUser(arena = normalizeGame(gameState || familyData?.gameArena)) {
+  if (!currentUser?.uid) return normalizeGameRecords(arena.records);
+  const row = arena.freeScores?.[currentUser.uid];
+  return updateGameRecord(arena.records, "freeplay", row);
+}
+
+function applyMatchRecords(arena = normalizeGame(gameState || familyData?.gameArena)) {
+  let records = normalizeGameRecords(arena.records);
+  Object.values(arena.match?.finalScores || arena.match?.scores || {}).forEach((row) => {
+    records = updateGameRecord(records, "matches", row);
+  });
+  return records;
+}
+
 async function writeGameArena(nextArena) {
   const existingArena = familyData?.gameArena || {};
   const existingPlayers = existingArena.players || {};
@@ -1915,6 +2049,8 @@ async function writeGameArena(nextArena) {
   const patch = {
     version: GAME_VERSION,
     updatedAt: Date.now(),
+    freeScores: nextArena.freeScores || {},
+    records: normalizeGameRecords(nextArena.records),
     [`players/${currentUser.uid}`]: player,
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode)
   };
@@ -1963,6 +2099,8 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     pepperoniPickups: gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {}),
     lastPepperoniSpawnAt: Number(nextArena.lastPepperoniSpawnAt || 0),
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
+    freeScores: Object.keys(nextArena.freeScores || {}).length ? nextArena.freeScores : null,
+    records: normalizeGameRecords(nextArena.records),
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
@@ -2751,6 +2889,7 @@ function drawGame() {
     hideGameArenaStatus();
   }
   renderMatchLeaderboard();
+  renderAmmoDisplay();
 }
 
 function drawGameCountdownOverlay(ctx, text) {
@@ -2812,12 +2951,72 @@ function renderMatchLeaderboard() {
   const match = arena.match;
   const liveList = document.querySelector("#match-leaderboard");
   const finalList = document.querySelector("#final-match-leaderboard");
-  const rows = match.status === "active" || match.status === "ended" ? gameMatchRows(match) : [];
+  const rows = gameViewMode === "free" ? gameFreeplayRows(arena) : match.status === "active" || match.status === "ended" ? gameMatchRows(match) : [];
   [liveList, finalList].forEach((list) => {
     if (!list) return;
-    const listRows = rows.length || match.status === "idle" ? rows : [{ uid: "empty", name: "No scores yet", xp: 0 }];
+    const listRows = padGameScoreRows(rows, 5);
     updateMatchListRows(list, listRows);
   });
+}
+
+function renderGameRecords() {
+  const arena = normalizeGame(familyData?.gameArena || gameState);
+  updateRecordList(document.querySelector("#freeplay-records-list"), arena.records.freeplay || []);
+  updateRecordList(document.querySelector("#match-records-list"), arena.records.matches || []);
+}
+
+function updateRecordList(list, rows) {
+  if (!list) return;
+  list.replaceChildren(...padGameScoreRows(rows, 3).map((row, index) => {
+    const item = document.createElement("li");
+    item.innerHTML = `
+      <span class="match-place">${index + 1}</span>
+      <strong>${row.uid ? escapeHtml(row.name || "Player") : ""}</strong>
+      <span>${row.uid ? `${Number(row.xp || 0)} XP` : ""}</span>
+    `;
+    return item;
+  }));
+}
+
+function renderAmmoDisplay() {
+  const display = document.querySelector("#ammo-display");
+  const icon = document.querySelector("#ammo-icon");
+  const count = document.querySelector("#ammo-count");
+  if (!display || !icon || !count) return;
+  const player = gameLocalPlayer;
+  const visible = Boolean(player && gameViewMode !== "menu" && !gameSpectating);
+  display.hidden = !visible;
+  if (!visible) return;
+  normalizeGamePlayerPowerup(player, Date.now());
+  const ammo = gameAmmoInfo(player);
+  count.textContent = ammo.label;
+  const flashAlpha = ammo.flashes ? gameExpiringFlashAlpha(player.powerupUntil, GAME_POWERUP_FLASH_MS, Date.now()) : 1;
+  icon.style.opacity = String(ammo.iconFlashes ? flashAlpha : 1);
+  count.style.opacity = String(ammo.labelFlashes ? flashAlpha : 1);
+  drawGameAmmoIcon(icon, ammo.iconType);
+}
+
+function gameAmmoInfo(player) {
+  if (player?.powerup === "meatball") {
+    return { iconType: "meatball", label: "MEATBALL", iconFlashes: true, labelFlashes: true, flashes: true };
+  }
+  if (player?.powerup === "basil") {
+    return { iconType: "basil", label: "∞", iconFlashes: true, labelFlashes: true, flashes: true };
+  }
+  if (player?.powerup === "mushroom") {
+    return { iconType: "mushroom", label: String(Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player.pepperoniCount || 0))), iconFlashes: true, labelFlashes: false, flashes: true };
+  }
+  return { iconType: "pepperoni", label: String(Math.min(GAME_MAX_PLAYER_PEPPERONI, Number(player?.pepperoniCount || 0))), iconFlashes: false, labelFlashes: false, flashes: false };
+}
+
+function drawGameAmmoIcon(canvas, type) {
+  const ctx = canvas.getContext("2d");
+  const size = canvas.width;
+  ctx.clearRect(0, 0, size, size);
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  drawGameTopping(ctx, type, 0, 0, size * 0.28, 4);
+  ctx.restore();
 }
 
 function updateMatchListRows(list, rows) {
@@ -2825,11 +3024,11 @@ function updateMatchListRows(list, rows) {
   const existing = new Map([...list.children].map((item) => [item.dataset.uid, item]));
   const nextItems = rows.map((row, index) => {
     const item = existing.get(row.uid) || document.createElement("li");
-    item.dataset.uid = row.uid;
+    item.dataset.uid = row.uid || `empty-${index}`;
     item.innerHTML = `
       <span class="match-place">${index + 1}</span>
-      <strong>${escapeHtml(row.name || "Player")}</strong>
-      <span>${Number(row.xp || 0)} XP</span>
+      <strong>${row.uid ? escapeHtml(row.name || "Player") : ""}</strong>
+      <span>${row.uid ? `${Number(row.xp || 0)} XP` : ""}</span>
     `;
     return item;
   });
@@ -2850,6 +3049,18 @@ function gameMatchRows(match = {}) {
   const source = match.status === "ended" ? match.finalScores : match.scores;
   return Object.values(normalizeMatchScores(source || {}, match.participants || {}))
     .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0) || (a.name || "").localeCompare(b.name || ""));
+}
+
+function gameFreeplayRows(arena = normalizeGame(gameState || familyData?.gameArena)) {
+  return Object.values(arena.freeScores || {})
+    .filter((row) => row?.uid)
+    .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0) || (a.name || "").localeCompare(b.name || ""));
+}
+
+function padGameScoreRows(rows = [], count = 5) {
+  const next = rows.slice(0, count);
+  while (next.length < count) next.push({ uid: "", name: "", xp: 0 });
+  return next;
 }
 
 function drawGameGrid(ctx) {

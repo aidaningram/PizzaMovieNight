@@ -293,6 +293,10 @@
 
           <section id="game-play-panel" class="game-play-panel" hidden>
             <button id="game-back-menu-button" class="game-back-button" type="button" aria-label="Back to Pizza Arena menu">←</button>
+            <section id="ammo-display" class="ammo-display" aria-live="polite">
+              <canvas id="ammo-icon" class="ammo-icon" width="64" height="64" aria-hidden="true"></canvas>
+              <span>Ammo: <strong id="ammo-count">0</strong></span>
+            </section>
             <section class="pizza-game-topbar">
               <div>
                 <p class="eyebrow">Pizza Arena</p>
@@ -332,6 +336,16 @@
               <button id="mobile-shoot-button" class="fire-button" type="button">Fire</button>
             </section>
             <section id="spectator-panel" class="spectator-panel" hidden>You are a spectator</section>
+          </section>
+          <section id="game-records-panel" class="game-records-panel">
+            <div>
+              <p class="eyebrow">Free Play Records</p>
+              <ol id="freeplay-records-list" class="records-list"></ol>
+            </div>
+            <div>
+              <p class="eyebrow">Match Records</p>
+              <ol id="match-records-list" class="records-list"></ol>
+            </div>
           </section>
         </section>
       </main>
