@@ -78,6 +78,8 @@ const GAME_XP = {
 const GAME_MUSHROOM_FUSE_MS = 700;
 const GAME_MUSHROOM_SPLASH_RADIUS = 184;
 const GAME_MUSHROOM_EXPLOSION_MS = 360;
+const GAME_MUSHROOM_EXPLOSION_SYNC_TTL_MS = 2500;
+const GAME_REMOVED_PROJECTILE_TTL_MS = 3500;
 const GAME_BASIL_FIRE_MS = 90;
 const GAME_BASIL_LIFE_MS = 496;
 const GAME_MEATBALL_SIZE = 84;
@@ -134,6 +136,7 @@ let gameAnimationId = null;
 let gameRemoteProjectiles = {};
 let gameVisualPlayers = {};
 let gameExplosionEffects = [];
+let gameSharedExplosionSeenAt = {};
 let gameTouchMoveLocked = false;
 let gameConsumedHitIds = new Set();
 let gameRemovedProjectileIds = new Set();
@@ -1413,10 +1416,13 @@ async function startGameMatch(contestants) {
 
 function receiveGameSnapshot() {
   if (!document.querySelector("#game-canvas")) return;
+  const now = Date.now();
   const remoteGame = normalizeGame(familyData?.gameArena);
   syncGameViewWithMatch(remoteGame);
   if (gameMatchExitPending && gameViewMode === "menu") return;
-  const zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.zombieDeaths, gameState?.zombieDeaths), Date.now());
+  const zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.zombieDeaths, gameState?.zombieDeaths), now);
+  const removedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.removedProjectiles, gameState?.removedProjectiles), now, GAME_REMOVED_PROJECTILE_TTL_MS);
+  syncGameRemovedProjectiles(removedProjectiles);
   const ownPlayer = gameLocalPlayer || remoteGame.players[currentUser?.uid];
   const players = {
     ...remoteGame.players,
@@ -1426,11 +1432,12 @@ function receiveGameSnapshot() {
   const localZombies = gameState?.version === GAME_VERSION && gameState?.zombies?.length ? gameState.zombies : null;
   const remoteZombies = applyGameZombieDeaths(remoteGame.zombies, zombieDeaths);
   const shouldKeepLocalZombies = currentUser?.uid === gameHostUid(players) && localZombies;
-  const explosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(remoteGame.explosionEffects, gameState?.explosionEffects), Date.now());
+  const explosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(remoteGame.explosionEffects, gameState?.explosionEffects), now);
   gameState = {
     ...remoteGame,
     players,
     zombieDeaths,
+    removedProjectiles,
     explosionEffects,
     zombies: shouldKeepLocalZombies ? mergeGameZombies(remoteZombies, localZombies, zombieDeaths) : remoteZombies,
     projectiles: mergeGameProjectiles(remoteGame.projectiles, gameState?.projectiles || {})
@@ -1488,6 +1495,7 @@ function defaultGameState() {
     version: GAME_VERSION,
     players: {},
     projectiles: {},
+    removedProjectiles: {},
     walls: GAME_WALLS,
     zombies: GAME_ZOMBIE_STARTS.map((zombie) => ({ ...zombie })),
     zombieDeaths: {},
@@ -1537,6 +1545,7 @@ function normalizeGame(value) {
     version: GAME_VERSION,
     players: value?.players || {},
     projectiles: value?.projectiles || {},
+    removedProjectiles: useCurrentMap ? pruneGameTimedMap(value?.removedProjectiles || {}, Date.now(), GAME_REMOVED_PROJECTILE_TTL_MS) : {},
     walls: GAME_WALLS,
     zombies: useCurrentMap && value?.zombies ? normalizeGameZombies(value.zombies) : fallback.zombies,
     zombieDeaths: useCurrentMap ? pruneGameTimedMap(value?.zombieDeaths || {}, Date.now()) : {},
@@ -1658,7 +1667,7 @@ function pruneGameTimedMap(items = {}, now = Date.now(), ttl = GAME_ZOMBIE_RESPA
 }
 
 function pruneGameExplosionEffects(items = {}, now = Date.now()) {
-  return pruneGameTimedMap(items, now, GAME_MUSHROOM_EXPLOSION_MS + 300);
+  return pruneGameTimedMap(items, now, GAME_MUSHROOM_EXPLOSION_SYNC_TTL_MS);
 }
 
 function mergeGameTimedMaps(first = {}, second = {}) {
@@ -1679,6 +1688,10 @@ function gameTimedMapSignature(items = {}) {
     .map(([key, value]) => `${key}:${Number(value?.deadUntil || value?.createdAt || value || 0)}`)
     .sort()
     .join("|");
+}
+
+function syncGameRemovedProjectiles(items = {}) {
+  Object.keys(items || {}).forEach((id) => gameRemovedProjectileIds.add(id));
 }
 
 function gameScoreSignature(state = {}) {
@@ -1804,12 +1817,15 @@ function updateLocalGame(dt, now) {
   const zombieSignatureBefore = gameZombieSignature(gameState.zombies || []);
   const collectedSignatureBefore = gameTimedMapSignature(gameState.collectedPickups || {});
   const zombieDeathsSignatureBefore = gameTimedMapSignature(gameState.zombieDeaths || {});
+  const removedProjectilesSignatureBefore = gameTimedMapSignature(gameState.removedProjectiles || {});
   const explosionSignatureBefore = gameTimedMapSignature(gameState.explosionEffects || {});
-  const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
   let zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, gameState.zombieDeaths), now);
+  let removedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(serverGame.removedProjectiles, gameState.removedProjectiles), now, GAME_REMOVED_PROJECTILE_TTL_MS);
+  syncGameRemovedProjectiles(removedProjectiles);
+  const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const explosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(serverGame.explosionEffects, gameState.explosionEffects), now);
   const frozen = gameMatchFrozen(activeMatch, now);
   const zombies = frozen
@@ -1828,11 +1844,13 @@ function updateLocalGame(dt, now) {
   const leaderboard = gameState.leaderboard || {};
   const nextKillLog = [...(gameState.killLog || [])];
   if (!frozen) resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
+  removedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(removedProjectiles, gameState.removedProjectiles), now, GAME_REMOVED_PROJECTILE_TTL_MS);
   const nextExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(explosionEffects, gameState.explosionEffects), now);
   gameState = {
     ...gameState,
     players,
     projectiles,
+    removedProjectiles,
     zombies,
     zombieDeaths,
     explosionEffects: nextExplosionEffects,
@@ -1853,12 +1871,14 @@ function updateLocalGame(dt, now) {
   const zombieSharedChanged = !isHost && gameZombieSignature(gameState.zombies || []) !== zombieSignatureBefore;
   const collectedSharedChanged = gameTimedMapSignature(gameState.collectedPickups || {}) !== collectedSignatureBefore;
   const zombieDeathsSharedChanged = gameTimedMapSignature(gameState.zombieDeaths || {}) !== zombieDeathsSignatureBefore;
+  const removedProjectilesSharedChanged = gameTimedMapSignature(gameState.removedProjectiles || {}) !== removedProjectilesSignatureBefore;
   const explosionSharedChanged = gameTimedMapSignature(gameState.explosionEffects || {}) !== explosionSignatureBefore;
   const sharedArenaChanged = Object.keys(hits).length !== hitCountBefore
     || Object.keys(projectiles).length !== projectileCountBefore
     || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore
     || gameScoreSignature(gameState) !== scoreSignatureBefore
     || zombieSharedChanged
+    || removedProjectilesSharedChanged
     || explosionSharedChanged
     || collectedSharedChanged
     || zombieDeathsSharedChanged;
@@ -1873,12 +1893,15 @@ function updateLocalGame(dt, now) {
 
 async function syncLocalGame(now) {
   const nextGame = normalizeGame(gameState);
-  const projectiles = pruneGameProjectiles(mergeGameProjectiles(gameRemoteProjectiles, nextGame.projectiles), now);
   const players = pruneGamePlayers({ ...nextGame.players, [currentUser.uid]: gameLocalPlayer });
   const leaderboard = nextGame.leaderboard || {};
   const hits = pruneGameHits(nextGame.hits || {}, now);
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
+  const syncedRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(serverGame.removedProjectiles, nextGame.removedProjectiles), now, GAME_REMOVED_PROJECTILE_TTL_MS);
+  syncGameRemovedProjectiles(syncedRemovedProjectiles);
+  const projectiles = pruneGameProjectiles(mergeGameProjectiles(gameRemoteProjectiles, nextGame.projectiles), now);
+  const nextRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(syncedRemovedProjectiles, gameState?.removedProjectiles), now, GAME_REMOVED_PROJECTILE_TTL_MS);
   const syncedZombies = isHost
     ? nextGame.zombies
     : gameZombieSignature(nextGame.zombies) === gameZombieSignature(serverGame.zombies)
@@ -1896,6 +1919,7 @@ async function syncLocalGame(now) {
     ...nextGame,
     players,
     projectiles,
+    removedProjectiles: nextRemovedProjectiles || {},
     walls: GAME_WALLS,
     zombies: syncedZombies,
     zombieDeaths: syncedZombieDeaths || {},
@@ -2076,11 +2100,13 @@ async function writeGameArena(nextArena) {
   });
   if (isHost || !existingZombies) {
     const mergedZombieDeaths = mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths);
+    const mergedRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(existingArena.removedProjectiles, nextArena.removedProjectiles), Date.now(), GAME_REMOVED_PROJECTILE_TTL_MS);
     const mergedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(existingArena.explosionEffects, nextArena.explosionEffects));
     const mergedCollectedPickups = mergeGameTimedMaps(existingArena.collectedPickups, nextArena.collectedPickups);
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
     patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {});
     addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+    addGameTimedMapPatch(patch, "removedProjectiles", mergedRemovedProjectiles);
     patch.explosionEffects = Object.keys(mergedExplosionEffects || {}).length ? mergedExplosionEffects : null;
     addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
     patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
@@ -2111,6 +2137,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
   }
   const mergedCollectedPickups = mergeGameTimedMaps(familyData?.gameArena?.collectedPickups, nextArena.collectedPickups);
   const mergedZombieDeaths = mergeGameTimedMaps(familyData?.gameArena?.zombieDeaths, nextArena.zombieDeaths);
+  const mergedRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(familyData?.gameArena?.removedProjectiles, nextArena.removedProjectiles), Date.now(), GAME_REMOVED_PROJECTILE_TTL_MS);
   const mergedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(familyData?.gameArena?.explosionEffects, nextArena.explosionEffects));
   const patch = {
     version: GAME_VERSION,
@@ -2131,6 +2158,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
   }
   addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
   addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+  addGameTimedMapPatch(patch, "removedProjectiles", mergedRemovedProjectiles);
   patch.explosionEffects = Object.keys(mergedExplosionEffects || {}).length ? mergedExplosionEffects : null;
   if (options.includeZombies) {
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
@@ -2153,7 +2181,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
       if (shotType === "mushroom") {
         explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
       } else {
-        gameRemovedProjectileIds.add(shot.id);
+        markGameProjectileRemoved(shot, now);
         delete projectiles[shot.id];
       }
       return;
@@ -2167,7 +2195,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
           explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
           killGamePlayerByUid(player.uid, shot.ownerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, shot.id);
-          gameRemovedProjectileIds.add(shot.id);
+          markGameProjectileRemoved(shot, now);
           delete projectiles[shot.id];
         }
       }
@@ -2180,7 +2208,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
           explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
           killGameZombie(zombie, zombieDeaths, now, shot.ownerUid);
-          gameRemovedProjectileIds.add(shot.id);
+          markGameProjectileRemoved(shot, now);
           delete projectiles[shot.id];
         }
       }
@@ -2215,7 +2243,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
 }
 
 function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now) {
-  addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
+  const effect = addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
   Object.values(players).forEach((player) => {
     const playerIsRespawning = player.deadUntil && now < player.deadUntil;
     if (!player.alive || player.powerup === "meatball" || playerIsRespawning || gamePlayerShielded(player, now) || hits[player.uid]) return;
@@ -2228,7 +2256,8 @@ function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard
       killGameZombie(zombie, zombieDeaths, now, shot.ownerUid);
     }
   });
-  gameRemovedProjectileIds.add(shot.id);
+  markGameProjectileRemoved(shot, now, effect);
+  writeGameProjectileBurst(shot, effect);
   delete projectiles[shot.id];
 }
 
@@ -2248,13 +2277,38 @@ function addGameExplosionEffect(x, y, radius, now = Date.now()) {
       [effect.id]: effect
     };
   }
-  writeGameExplosionEffect(effect);
   return effect;
 }
 
-function writeGameExplosionEffect(effect) {
-  if (!FIREBASE_READY || !effect?.id) return;
+function markGameProjectileRemoved(shot, now = Date.now(), effect = null) {
+  if (!shot?.id) return null;
+  const removal = {
+    id: shot.id,
+    type: shot.type || "pepperoni",
+    createdAt: now
+  };
+  if (effect) {
+    removal.explosionId = effect.id;
+    removal.x = effect.x;
+    removal.y = effect.y;
+    removal.radius = effect.radius;
+  }
+  gameRemovedProjectileIds.add(shot.id);
+  if (gameState) {
+    gameState.removedProjectiles = {
+      ...(gameState.removedProjectiles || {}),
+      [shot.id]: removal
+    };
+  }
+  return removal;
+}
+
+function writeGameProjectileBurst(shot, effect) {
+  if (!FIREBASE_READY || !shot?.id || !effect?.id) return;
+  const removal = gameState?.removedProjectiles?.[shot.id] || markGameProjectileRemoved(shot, effect.createdAt, effect);
   services.rtdbFns.update(gameArenaRef(), {
+    [`projectiles/${shot.id}`]: null,
+    [`removedProjectiles/${shot.id}`]: removal,
     [`explosionEffects/${effect.id}`]: effect,
     updatedAt: Date.now()
   }).catch(() => {});
@@ -2793,7 +2847,7 @@ function pruneGameProjectiles(projectiles, now) {
     const mushroomWaitingToBurst = shotType === "mushroom" && (gameProjectileHitsWall(shot) || now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS);
     const shotLife = Number(shot.lifeMs || GAME_PIZZA_LIFE_MS);
     if (now - shot.createdAt > shotLife || !gameProjectileInBounds(shot) || (shotType !== "mushroom" && gameProjectileHitsWall(shot))) {
-      gameRemovedProjectileIds.add(shot.id);
+      markGameProjectileRemoved(shot, now);
       return;
     }
     next[shot.id] = { ...shot, burstReady: mushroomWaitingToBurst || Boolean(shot.burstReady) };
@@ -3457,7 +3511,16 @@ function drawGamePizzaShot(ctx, shot) {
 function drawGameExplosionEffects(ctx) {
   const now = Date.now();
   gameExplosionEffects = gameExplosionEffects.filter((effect) => now - effect.createdAt <= GAME_MUSHROOM_EXPLOSION_MS);
-  const sharedEffects = Object.values(pruneGameExplosionEffects(gameState?.explosionEffects || {}, now));
+  const rawSharedEffects = Object.values(pruneGameExplosionEffects(gameState?.explosionEffects || {}, now));
+  const sharedEffectIds = new Set(rawSharedEffects.map((effect) => effect.id).filter(Boolean));
+  Object.keys(gameSharedExplosionSeenAt).forEach((id) => {
+    if (!sharedEffectIds.has(id)) delete gameSharedExplosionSeenAt[id];
+  });
+  const sharedEffects = rawSharedEffects.map((effect) => {
+    if (!effect?.id) return effect;
+    if (!gameSharedExplosionSeenAt[effect.id]) gameSharedExplosionSeenAt[effect.id] = now;
+    return { ...effect, createdAt: gameSharedExplosionSeenAt[effect.id] };
+  });
   const effects = new Map();
   [...sharedEffects, ...gameExplosionEffects].forEach((effect) => {
     if (effect?.id) effects.set(effect.id, effect);
@@ -3691,6 +3754,7 @@ function cleanupGame() {
   gameRemoteProjectiles = {};
   gameVisualPlayers = {};
   gameExplosionEffects = [];
+  gameSharedExplosionSeenAt = {};
   gameFireHeld = false;
   gameInput = { x: 0, y: 0 };
   gameKeyboardInput = { up: false, down: false, left: false, right: false };
