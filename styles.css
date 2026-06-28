@@ -1479,6 +1479,10 @@ body.game-playing .game-page .page-header {
     align-content: start;
   }
 
+  body.game-freeplay .game-play-panel {
+    --game-leaderboard-height: 48px;
+  }
+
   .game-back-button {
     margin-left: max(12px, env(safe-area-inset-left));
   }
@@ -1607,6 +1611,10 @@ body.game-playing .game-page .page-header {
     min-height: 19px;
     padding: 1px 8px;
     font-size: 0.64rem;
+  }
+
+  .match-leaderboard.freeplay-summary li {
+    min-height: 22px;
   }
 
   .match-place {

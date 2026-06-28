@@ -1191,6 +1191,7 @@ function updateGameModePanels() {
 
   const showPlay = gameViewMode !== "menu";
   document.body.classList.toggle("game-playing", showPlay);
+  document.body.classList.toggle("game-freeplay", showPlay && gameViewMode === "free");
   if (menuPanel) menuPanel.hidden = showPlay;
   if (playPanel) playPanel.hidden = !showPlay;
   if (liveLeaderboard) liveLeaderboard.hidden = !showPlay;
@@ -2978,12 +2979,16 @@ function renderMatchLeaderboard() {
   const match = arena.match;
   const liveList = document.querySelector("#match-leaderboard");
   const finalList = document.querySelector("#final-match-leaderboard");
-  const rows = gameViewMode === "free" ? gameFreeplayRows(arena) : match.status === "active" || match.status === "ended" ? gameMatchRows(match) : [];
-  [liveList, finalList].forEach((list) => {
-    if (!list) return;
-    const listRows = padGameScoreRows(rows, 5);
-    updateMatchListRows(list, listRows);
-  });
+  const matchRows = match.status === "active" || match.status === "ended" ? gameMatchRows(match) : [];
+  if (liveList) {
+    const isFreeplay = gameViewMode === "free";
+    liveList.classList.toggle("freeplay-summary", isFreeplay);
+    updateMatchListRows(liveList, padGameScoreRows(isFreeplay ? gameFreeplayRows(arena) : matchRows, isFreeplay ? 2 : 5));
+  }
+  if (finalList) {
+    finalList.classList.remove("freeplay-summary");
+    updateMatchListRows(finalList, padGameScoreRows(matchRows, 5));
+  }
 }
 
 function renderGameRecords() {
@@ -3079,9 +3084,12 @@ function gameMatchRows(match = {}) {
 }
 
 function gameFreeplayRows(arena = normalizeGame(gameState || familyData?.gameArena)) {
-  return Object.values(arena.freeScores || {})
+  const rows = Object.values(arena.freeScores || {})
     .filter((row) => row?.uid)
     .sort((a, b) => Number(b.xp || 0) - Number(a.xp || 0) || (a.name || "").localeCompare(b.name || ""));
+  const leader = rows[0];
+  const own = currentUser?.uid ? rows.find((row) => row.uid === currentUser.uid) : null;
+  return [leader, own].filter((row, index, list) => row?.uid && list.findIndex((item) => item?.uid === row.uid) === index);
 }
 
 function padGameScoreRows(rows = [], count = 5) {
