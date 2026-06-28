@@ -1425,10 +1425,12 @@ function receiveGameSnapshot() {
   const localZombies = gameState?.version === GAME_VERSION && gameState?.zombies?.length ? gameState.zombies : null;
   const remoteZombies = applyGameZombieDeaths(remoteGame.zombies, zombieDeaths);
   const shouldKeepLocalZombies = currentUser?.uid === gameHostUid(players) && localZombies;
+  const explosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(remoteGame.explosionEffects, gameState?.explosionEffects), Date.now());
   gameState = {
     ...remoteGame,
     players,
     zombieDeaths,
+    explosionEffects,
     zombies: shouldKeepLocalZombies ? mergeGameZombies(remoteZombies, localZombies, zombieDeaths) : remoteZombies,
     projectiles: mergeGameProjectiles(remoteGame.projectiles, gameState?.projectiles || {})
   };
@@ -1488,6 +1490,7 @@ function defaultGameState() {
     walls: GAME_WALLS,
     zombies: GAME_ZOMBIE_STARTS.map((zombie) => ({ ...zombie })),
     zombieDeaths: {},
+    explosionEffects: {},
     pepperoniPickups: {},
     collectedPickups: {},
     lastPepperoniSpawnAt: Date.now() - GAME_PEPPERONI_SPAWN_MS,
@@ -1536,6 +1539,7 @@ function normalizeGame(value) {
     walls: GAME_WALLS,
     zombies: useCurrentMap && value?.zombies ? normalizeGameZombies(value.zombies) : fallback.zombies,
     zombieDeaths: useCurrentMap ? pruneGameTimedMap(value?.zombieDeaths || {}, Date.now()) : {},
+    explosionEffects: useCurrentMap ? pruneGameExplosionEffects(value?.explosionEffects || {}, Date.now()) : {},
     pepperoniPickups: useCurrentMap && value?.pepperoniPickups ? value.pepperoniPickups : fallback.pepperoniPickups,
     collectedPickups: useCurrentMap ? pruneGameTimedMap(value?.collectedPickups || {}, Date.now(), GAME_PICKUP_CLAIM_TTL_MS) : {},
     lastPepperoniSpawnAt: useCurrentMap ? Number(value?.lastPepperoniSpawnAt || fallback.lastPepperoniSpawnAt) : fallback.lastPepperoniSpawnAt,
@@ -1650,6 +1654,10 @@ function pruneGameTimedMap(items = {}, now = Date.now(), ttl = GAME_ZOMBIE_RESPA
     const createdAt = Number(value?.createdAt || value || 0);
     return createdAt && now - createdAt < ttl;
   }));
+}
+
+function pruneGameExplosionEffects(items = {}, now = Date.now()) {
+  return pruneGameTimedMap(items, now, GAME_MUSHROOM_EXPLOSION_MS + 300);
 }
 
 function mergeGameTimedMaps(first = {}, second = {}) {
@@ -1795,11 +1803,13 @@ function updateLocalGame(dt, now) {
   const zombieSignatureBefore = gameZombieSignature(gameState.zombies || []);
   const collectedSignatureBefore = gameTimedMapSignature(gameState.collectedPickups || {});
   const zombieDeathsSignatureBefore = gameTimedMapSignature(gameState.zombieDeaths || {});
+  const explosionSignatureBefore = gameTimedMapSignature(gameState.explosionEffects || {});
   const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles, dt, now), now);
   const players = { ...gameState.players, [currentUser.uid]: player };
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
   let zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, gameState.zombieDeaths), now);
+  const explosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(serverGame.explosionEffects, gameState.explosionEffects), now);
   const frozen = gameMatchFrozen(activeMatch, now);
   const zombies = frozen
     ? applyGameZombieDeaths(gameState.zombies, zombieDeaths)
@@ -1817,12 +1827,14 @@ function updateLocalGame(dt, now) {
   const leaderboard = gameState.leaderboard || {};
   const nextKillLog = [...(gameState.killLog || [])];
   if (!frozen) resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, now);
+  const nextExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(explosionEffects, gameState.explosionEffects), now);
   gameState = {
     ...gameState,
     players,
     projectiles,
     zombies,
     zombieDeaths,
+    explosionEffects: nextExplosionEffects,
     pepperoniPickups,
     collectedPickups,
     lastPepperoniSpawnAt,
@@ -1840,11 +1852,13 @@ function updateLocalGame(dt, now) {
   const zombieSharedChanged = !isHost && gameZombieSignature(gameState.zombies || []) !== zombieSignatureBefore;
   const collectedSharedChanged = gameTimedMapSignature(gameState.collectedPickups || {}) !== collectedSignatureBefore;
   const zombieDeathsSharedChanged = gameTimedMapSignature(gameState.zombieDeaths || {}) !== zombieDeathsSignatureBefore;
+  const explosionSharedChanged = gameTimedMapSignature(gameState.explosionEffects || {}) !== explosionSignatureBefore;
   const sharedArenaChanged = Object.keys(hits).length !== hitCountBefore
     || Object.keys(projectiles).length !== projectileCountBefore
     || Object.keys(gameState.pepperoniPickups || {}).length !== pepperoniCountBefore
     || gameScoreSignature(gameState) !== scoreSignatureBefore
     || zombieSharedChanged
+    || explosionSharedChanged
     || collectedSharedChanged
     || zombieDeathsSharedChanged;
   if (sharedArenaChanged) {
@@ -1871,6 +1885,7 @@ async function syncLocalGame(now) {
       : nextGame.zombies;
   const syncedCollectedPickups = isHost ? nextGame.collectedPickups : mergeGameTimedMaps(serverGame.collectedPickups, nextGame.collectedPickups);
   const syncedZombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, nextGame.zombieDeaths), now);
+  const syncedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(serverGame.explosionEffects, nextGame.explosionEffects), now);
   const syncedPepperoniPickups = filterGameAvailablePickups(isHost ? nextGame.pepperoniPickups : serverGame.pepperoniPickups, syncedCollectedPickups);
   const syncedLastPepperoniSpawnAt = isHost ? nextGame.lastPepperoniSpawnAt : serverGame.lastPepperoniSpawnAt;
   const syncedMatch = nextGame.match?.status === "active" || nextGame.match?.status === "ended"
@@ -1883,6 +1898,7 @@ async function syncLocalGame(now) {
     walls: GAME_WALLS,
     zombies: syncedZombies,
     zombieDeaths: syncedZombieDeaths || {},
+    explosionEffects: syncedExplosionEffects || {},
     pepperoniPickups: syncedPepperoniPickups || {},
     collectedPickups: syncedCollectedPickups || {},
     lastPepperoniSpawnAt: Number(syncedLastPepperoniSpawnAt || 0),
@@ -2059,10 +2075,12 @@ async function writeGameArena(nextArena) {
   });
   if (isHost || !existingZombies) {
     const mergedZombieDeaths = mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths);
+    const mergedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(existingArena.explosionEffects, nextArena.explosionEffects));
     const mergedCollectedPickups = mergeGameTimedMaps(existingArena.collectedPickups, nextArena.collectedPickups);
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
     patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {});
     addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+    patch.explosionEffects = Object.keys(mergedExplosionEffects || {}).length ? mergedExplosionEffects : null;
     addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
     patch.lastPepperoniSpawnAt = Number(nextArena.lastPepperoniSpawnAt || 0);
   }
@@ -2092,6 +2110,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
   }
   const mergedCollectedPickups = mergeGameTimedMaps(familyData?.gameArena?.collectedPickups, nextArena.collectedPickups);
   const mergedZombieDeaths = mergeGameTimedMaps(familyData?.gameArena?.zombieDeaths, nextArena.zombieDeaths);
+  const mergedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(familyData?.gameArena?.explosionEffects, nextArena.explosionEffects));
   const patch = {
     version: GAME_VERSION,
     walls: GAME_WALLS,
@@ -2111,6 +2130,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
   }
   addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
   addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+  patch.explosionEffects = Object.keys(mergedExplosionEffects || {}).length ? mergedExplosionEffects : null;
   if (options.includeZombies) {
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
   }
@@ -2212,14 +2232,21 @@ function explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard
 }
 
 function addGameExplosionEffect(x, y, radius, now = Date.now()) {
-  gameExplosionEffects.push({
+  const effect = {
     id: `explosion-${now}-${Math.random().toString(36).slice(2)}`,
     x,
     y,
     radius,
     createdAt: now
-  });
+  };
+  gameExplosionEffects.push(effect);
   gameExplosionEffects = gameExplosionEffects.slice(-8);
+  if (gameState) {
+    gameState.explosionEffects = {
+      ...(gameState.explosionEffects || {}),
+      [effect.id]: effect
+    };
+  }
 }
 
 function killGamePlayerByUid(victimUid, killerUid, players, leaderboard, nextKillLog, hits, pepperoniPickups, now, hitPrefix) {
@@ -3412,7 +3439,12 @@ function drawGamePizzaShot(ctx, shot) {
 function drawGameExplosionEffects(ctx) {
   const now = Date.now();
   gameExplosionEffects = gameExplosionEffects.filter((effect) => now - effect.createdAt <= GAME_MUSHROOM_EXPLOSION_MS);
-  gameExplosionEffects.forEach((effect) => {
+  const sharedEffects = Object.values(pruneGameExplosionEffects(gameState?.explosionEffects || {}, now));
+  const effects = new Map();
+  [...sharedEffects, ...gameExplosionEffects].forEach((effect) => {
+    if (effect?.id) effects.set(effect.id, effect);
+  });
+  [...effects.values()].forEach((effect) => {
     const age = now - effect.createdAt;
     const progress = Math.min(1, age / GAME_MUSHROOM_EXPLOSION_MS);
     ctx.save();
