@@ -285,6 +285,7 @@
             </div>
             <div class="game-menu-actions">
               <button id="free-play-button" class="secondary-action" type="button">Free Play</button>
+              <button id="survival-button" class="secondary-action" type="button">Zombie Survival</button>
               <button id="start-match-button" class="primary-action" type="button">Start Match</button>
               <button id="spectate-button" class="primary-action" type="button" hidden>Spectate</button>
               <p id="match-queue-note" class="helper-text"></p>
@@ -308,6 +309,7 @@
                 <canvas id="ammo-icon" class="ammo-icon" width="64" height="64" aria-hidden="true"></canvas>
                 <span>Ammo: <strong id="ammo-count">0</strong></span>
               </section>
+              <section id="survival-lives" class="survival-lives" aria-label="Survival lives" hidden></section>
             </section>
             <section class="pizza-game-topbar">
               <div>
@@ -336,6 +338,7 @@
             </section>
 
             <ol id="match-leaderboard" class="match-leaderboard" hidden></ol>
+            <section id="survival-wave-strip" class="survival-wave-strip" hidden>Wave 1</section>
 
             <section class="pizza-game-hud">
               <button id="shoot-button" class="shoot-button" type="button">Shoot pizza</button>

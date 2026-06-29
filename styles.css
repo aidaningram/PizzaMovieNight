@@ -999,7 +999,7 @@ body.game-playing .game-page .page-header {
 .game-play-header {
   position: relative;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  grid-template-columns: 42px minmax(0, 1fr) 86px;
   align-items: center;
   min-height: 42px;
 }
@@ -1153,6 +1153,28 @@ body.game-playing .game-page .page-header {
   font-weight: 950;
 }
 
+.survival-lives {
+  grid-column: 3;
+  justify-self: end;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 42px;
+  padding-right: 8px;
+  color: var(--accent);
+  font-size: 1.35rem;
+  font-weight: 950;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.32);
+}
+
+.survival-lives[hidden] {
+  display: none;
+}
+
+.survival-heart.empty {
+  color: rgba(248, 239, 224, 0.22);
+}
+
 .ammo-display[hidden] {
   display: none;
 }
@@ -1288,6 +1310,28 @@ body.game-playing .game-page .page-header {
   min-height: 36px;
   list-style: none;
   align-content: start;
+}
+
+.survival-wave-strip {
+  display: grid;
+  place-items: center;
+  min-height: 36px;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(33, 30, 45, 0.88);
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-align: center;
+  box-shadow: var(--shadow);
+  text-transform: uppercase;
+}
+
+.survival-wave-strip[hidden] {
+  display: none;
 }
 
 .match-leaderboard li {
@@ -1483,12 +1527,16 @@ body.game-playing .game-page .page-header {
     --game-leaderboard-height: 48px;
   }
 
+  body.game-solo .game-play-panel {
+    --game-leaderboard-height: 48px;
+  }
+
   .game-back-button {
     margin-left: max(12px, env(safe-area-inset-left));
   }
 
   .game-play-header {
-    grid-template-columns: calc(54px + env(safe-area-inset-left)) minmax(0, 1fr) calc(54px + env(safe-area-inset-right));
+    grid-template-columns: calc(54px + env(safe-area-inset-left)) minmax(0, 1fr) calc(78px + env(safe-area-inset-right));
   }
 
   .game-menu-panel {
@@ -1523,6 +1571,12 @@ body.game-playing .game-page .page-header {
   .ammo-icon {
     width: 27px;
     height: 27px;
+  }
+
+  .survival-lives {
+    min-height: 34px;
+    padding-right: max(12px, env(safe-area-inset-right));
+    font-size: 1.05rem;
   }
 
   .game-rules-card {
@@ -1608,6 +1662,12 @@ body.game-playing .game-page .page-header {
     overflow: hidden;
     position: relative;
     z-index: 1;
+  }
+
+  .survival-wave-strip {
+    min-height: var(--game-leaderboard-height);
+    max-height: var(--game-leaderboard-height);
+    font-size: 0.95rem;
   }
 
   .match-leaderboard li {

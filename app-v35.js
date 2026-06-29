@@ -69,6 +69,14 @@ const GAME_SHIELD_FLASH_MS = 1500;
 const GAME_MATCH_DURATION_MS = 120000;
 const GAME_MATCH_COUNTDOWN_MS = 3500;
 const GAME_LOBBY_STALE_MS = 8000;
+const GAME_SURVIVAL_LIVES = 3;
+const GAME_SURVIVAL_WAVE_BANNER_MS = 1300;
+const GAME_SURVIVAL_GATE_SIZE = 150;
+const GAME_SURVIVAL_GATE_PADDING = 34;
+const GAME_SURVIVAL_X_GATE_START = (GAME_ARENA.width - GAME_SURVIVAL_GATE_SIZE) / 2;
+const GAME_SURVIVAL_X_GATE_END = GAME_SURVIVAL_X_GATE_START + GAME_SURVIVAL_GATE_SIZE;
+const GAME_SURVIVAL_Y_GATE_START = (GAME_ARENA.height - GAME_SURVIVAL_GATE_SIZE) / 2;
+const GAME_SURVIVAL_Y_GATE_END = GAME_SURVIVAL_Y_GATE_START + GAME_SURVIVAL_GATE_SIZE;
 const GAME_XP = {
   pepperoni: 100,
   special: 300,
@@ -102,6 +110,23 @@ const GAME_WALLS = [
   { x: 655, y: 735, w: 28, h: 130 },
   { x: 330, y: 925, w: 230, h: 28 },
   { x: 720, y: 990, w: 120, h: 28 }
+];
+const GAME_SURVIVAL_WALLS = [
+  { x: 0, y: 0, w: GAME_SURVIVAL_X_GATE_START, h: 24 },
+  { x: GAME_SURVIVAL_X_GATE_END, y: 0, w: GAME_ARENA.width - GAME_SURVIVAL_X_GATE_END, h: 24 },
+  { x: 0, y: GAME_ARENA.height - 24, w: GAME_SURVIVAL_X_GATE_START, h: 24 },
+  { x: GAME_SURVIVAL_X_GATE_END, y: GAME_ARENA.height - 24, w: GAME_ARENA.width - GAME_SURVIVAL_X_GATE_END, h: 24 },
+  { x: 0, y: 0, w: 24, h: GAME_SURVIVAL_Y_GATE_START },
+  { x: 0, y: GAME_SURVIVAL_Y_GATE_END, w: 24, h: GAME_ARENA.height - GAME_SURVIVAL_Y_GATE_END },
+  { x: GAME_ARENA.width - 24, y: 0, w: 24, h: GAME_SURVIVAL_Y_GATE_START },
+  { x: GAME_ARENA.width - 24, y: GAME_SURVIVAL_Y_GATE_END, w: 24, h: GAME_ARENA.height - GAME_SURVIVAL_Y_GATE_END },
+  ...GAME_WALLS.slice(4)
+];
+const GAME_SURVIVAL_GATES = [
+  { side: "top", x: GAME_ARENA.width / 2, y: -GAME_ZOMBIE_RADIUS - 8, min: GAME_SURVIVAL_X_GATE_START + GAME_SURVIVAL_GATE_PADDING, max: GAME_SURVIVAL_X_GATE_END - GAME_SURVIVAL_GATE_PADDING },
+  { side: "bottom", x: GAME_ARENA.width / 2, y: GAME_ARENA.height + GAME_ZOMBIE_RADIUS + 8, min: GAME_SURVIVAL_X_GATE_START + GAME_SURVIVAL_GATE_PADDING, max: GAME_SURVIVAL_X_GATE_END - GAME_SURVIVAL_GATE_PADDING },
+  { side: "left", x: -GAME_ZOMBIE_RADIUS - 8, y: GAME_ARENA.height / 2, min: GAME_SURVIVAL_Y_GATE_START + GAME_SURVIVAL_GATE_PADDING, max: GAME_SURVIVAL_Y_GATE_END - GAME_SURVIVAL_GATE_PADDING },
+  { side: "right", x: GAME_ARENA.width + GAME_ZOMBIE_RADIUS + 8, y: GAME_ARENA.height / 2, min: GAME_SURVIVAL_Y_GATE_START + GAME_SURVIVAL_GATE_PADDING, max: GAME_SURVIVAL_Y_GATE_END - GAME_SURVIVAL_GATE_PADDING }
 ];
 const GAME_ZOMBIE_STARTS = [
   { id: "zombie-1", x: 92, y: 82, vx: 1, vy: 0.35, facing: 1, alive: true, deadUntil: 0 },
@@ -947,7 +972,7 @@ function subscribeGameArena() {
   unsubscribeGameArena = services.rtdbFns.onValue(gameRef, (snap) => {
     const nextArena = snap.val();
     familyData = { ...familyData, gameArena: nextArena };
-    if (nextArena) receiveGameSnapshot();
+    if (nextArena && gameViewMode !== "solo") receiveGameSnapshot();
     updateGameModePanels();
     maybeStartQueuedMatch();
   }, () => {
@@ -958,6 +983,7 @@ function subscribeGameArena() {
 
 function attachGameMenuControls() {
   document.querySelector("#free-play-button")?.addEventListener("click", () => enterGameFreePlay());
+  document.querySelector("#survival-button")?.addEventListener("click", () => enterGameSurvival());
   document.querySelector("#start-match-button")?.addEventListener("click", () => queueGameMatch());
   document.querySelector("#spectate-button")?.addEventListener("click", () => enterGameSpectate());
   const gameBackButton = document.querySelector("#game-back-menu-button");
@@ -987,6 +1013,47 @@ function enterGameFreePlay() {
   clearGameQueue();
   updateGameModePanels();
   joinGameArena("free");
+  startGameLoop();
+}
+
+function enterGameSurvival() {
+  if (!currentUser?.uid) return;
+  const now = Date.now();
+  gameViewMode = "solo";
+  gameSpectating = false;
+  gameJoinedArena = false;
+  gameMatchExitPending = false;
+  clearGameQueue();
+  leaveGamePlayer();
+  resetLocalGameRuntime();
+  const countdownUntil = now + GAME_MATCH_COUNTDOWN_MS;
+  const player = createGamePlayer();
+  player.mode = "solo";
+  player.shieldUntil = countdownUntil + GAME_SURVIVAL_WAVE_BANNER_MS + GAME_RESPAWN_SHIELD_MS;
+  gameLocalPlayer = player;
+  gameState = {
+    ...defaultGameState(),
+    players: { [currentUser.uid]: player },
+    walls: GAME_SURVIVAL_WALLS,
+    zombies: createSurvivalWaveZombies(1, now),
+    pepperoniPickups: {},
+    collectedPickups: {},
+    projectiles: {},
+    removedProjectiles: {},
+    explosionEffects: {},
+    lastPepperoniSpawnAt: now - GAME_PEPPERONI_SPAWN_MS,
+    solo: {
+      active: true,
+      wave: 1,
+      lives: GAME_SURVIVAL_LIVES,
+      countdownUntil,
+      waveBannerUntil: countdownUntil + GAME_SURVIVAL_WAVE_BANNER_MS,
+      gameOver: false
+    },
+    updatedAt: now
+  };
+  setGameStatus("Survival", true);
+  updateGameModePanels();
   startGameLoop();
 }
 
@@ -1167,7 +1234,7 @@ function startGameLobbyPresenceTimer() {
 }
 
 function updateGameModePanels() {
-  const arena = normalizeGame(familyData?.gameArena || gameState);
+  const arena = gameViewMode === "solo" && gameState ? normalizeGame(gameState) : normalizeGame(familyData?.gameArena || gameState);
   const match = arena.match;
   const inProgress = gameMatchInProgress(match);
   const isParticipant = gameMatchParticipant(match, currentUser?.uid);
@@ -1184,6 +1251,8 @@ function updateGameModePanels() {
   const spectatorPanel = document.querySelector("#spectator-panel");
   const note = document.querySelector("#match-queue-note");
   const liveLeaderboard = document.querySelector("#match-leaderboard");
+  const waveStrip = document.querySelector("#survival-wave-strip");
+  const lives = document.querySelector("#survival-lives");
   const endPanel = document.querySelector("#match-end-panel");
   const recordsPanel = document.querySelector("#game-records-panel");
   const active = gameActiveContestants(arena);
@@ -1197,12 +1266,15 @@ function updateGameModePanels() {
   const showPlay = gameViewMode !== "menu";
   document.body.classList.toggle("game-playing", showPlay);
   document.body.classList.toggle("game-freeplay", showPlay && gameViewMode === "free");
+  document.body.classList.toggle("game-solo", showPlay && gameViewMode === "solo");
   if (menuPanel) menuPanel.hidden = showPlay;
   if (playPanel) playPanel.hidden = !showPlay;
-  if (liveLeaderboard) liveLeaderboard.hidden = !showPlay;
+  if (liveLeaderboard) liveLeaderboard.hidden = !showPlay || gameViewMode === "solo";
+  if (waveStrip) waveStrip.hidden = gameViewMode !== "solo";
+  if (lives) lives.hidden = gameViewMode !== "solo";
   if (backButton) backButton.hidden = !showPlay;
-  if (shootButton) shootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
-  if (mobileShootButton) mobileShootButton.disabled = gameViewMode === "spectate" || match.status === "ended";
+  if (shootButton) shootButton.disabled = gameViewMode === "spectate" || match.status === "ended" || gameSurvivalEnded();
+  if (mobileShootButton) mobileShootButton.disabled = gameViewMode === "spectate" || match.status === "ended" || gameSurvivalEnded();
   if (hud) hud.hidden = gameViewMode === "spectate";
   if (mobileControls) mobileControls.hidden = gameViewMode === "spectate";
   if (spectatorPanel) spectatorPanel.hidden = gameViewMode !== "spectate";
@@ -1227,6 +1299,7 @@ function updateGameModePanels() {
   renderMatchLeaderboard();
   renderGameRecords();
   renderAmmoDisplay();
+  renderSurvivalHud();
 }
 
 function joinGameArena(mode = "free") {
@@ -1351,10 +1424,10 @@ function gameActiveContestants(arena = normalizeGame(familyData?.gameArena)) {
   }));
   const merged = {};
   Object.values(lobby).forEach((entry) => {
-    if (entry.mode !== "spectate") merged[entry.uid] = entry;
+    if (entry.mode !== "spectate" && entry.mode !== "solo") merged[entry.uid] = entry;
   });
   playerEntries.forEach((entry) => {
-    if (entry.mode !== "spectate") merged[entry.uid] = entry;
+    if (entry.mode !== "spectate" && entry.mode !== "solo") merged[entry.uid] = entry;
   });
   return Object.values(merged);
 }
@@ -1752,7 +1825,8 @@ function gameTick(now) {
   }
   const dt = Math.min(0.04, (now - gameLastFrame) / 1000);
   gameLastFrame = now;
-  if (gameLocalPlayer && !gameSpectating) updateLocalGame(dt, Date.now());
+  if (gameViewMode === "solo") updateSurvivalGame(dt, Date.now());
+  else if (gameLocalPlayer && !gameSpectating) updateLocalGame(dt, Date.now());
   updateGameVisualPlayers(dt);
   drawGame();
   gameAnimationId = requestAnimationFrame(gameTick);
@@ -1897,6 +1971,279 @@ function updateLocalGame(dt, now) {
     gameLastHeartbeat = now;
     syncLocalGame(now);
   }
+}
+
+function updateSurvivalGame(dt, now) {
+  if (!currentUser?.uid || !gameState?.solo || !gameLocalPlayer) return;
+  const solo = { ...gameState.solo };
+  const player = { ...gameLocalPlayer };
+  normalizeGamePlayerPowerup(player, now);
+  const frozen = gameSurvivalFrozen(solo, now);
+
+  if (!solo.gameOver && player.deadUntil && now >= player.deadUntil) {
+    const spawn = randomGameSpawn();
+    player.x = spawn.x;
+    player.y = spawn.y;
+    player.alive = true;
+    player.deadUntil = 0;
+    player.shieldUntil = now + GAME_RESPAWN_SHIELD_MS;
+    clearGamePlayerLoadout(player);
+  }
+
+  if (!solo.gameOver && !frozen && player.alive) {
+    const vector = gameInputVector();
+    if (vector.x || vector.y) {
+      gameAim = vector;
+      player.aimX = vector.x;
+      player.aimY = vector.y;
+      const speed = gamePlayerMoveSpeed(player);
+      const next = moveGamePlayerWithWalls(player.x, player.y, vector.x * speed * dt, vector.y * speed * dt, gamePlayerHitRadius(player));
+      player.x = next.x;
+      player.y = next.y;
+    }
+  }
+
+  gameLocalPlayer = player;
+  if (!solo.gameOver && !frozen && gameFireHeld && player.powerup === "basil") {
+    shootGamePizza();
+  }
+
+  player.lastSeen = now;
+  const projectiles = pruneGameProjectiles(moveGameProjectiles(gameState.projectiles || {}, dt, now), now);
+  let zombies = frozen || solo.gameOver
+    ? gameState.zombies || []
+    : moveSurvivalZombies(gameState.zombies || [], player, dt, now);
+  let collectedPickups = pruneGameTimedMap(gameState.collectedPickups || {}, now, GAME_PICKUP_CLAIM_TTL_MS);
+  let pepperoniPickups = filterGameAvailablePickups({ ...(gameState.pepperoniPickups || {}) }, collectedPickups);
+  let lastPepperoniSpawnAt = Number(gameState.lastPepperoniSpawnAt || 0);
+  if (!solo.gameOver && !frozen) {
+    const spawned = spawnGamePepperoniPickups(pepperoniPickups, lastPepperoniSpawnAt, now);
+    pepperoniPickups = spawned.pickups;
+    lastPepperoniSpawnAt = spawned.lastSpawnAt;
+    collectGameToppings(player, pepperoniPickups, collectedPickups, now);
+    resolveSurvivalHits(player, projectiles, zombies, pepperoniPickups, solo, now);
+    if (!solo.gameOver && survivalWaveCleared(zombies)) {
+      const nextWave = startNextSurvivalWave(Number(solo.wave || 1) + 1, now);
+      solo.wave = nextWave.solo.wave;
+      solo.waveBannerUntil = nextWave.solo.waveBannerUntil;
+      zombies = nextWave.zombies;
+    }
+  }
+
+  gameState = {
+    ...gameState,
+    players: { [currentUser.uid]: player },
+    projectiles,
+    zombies,
+    pepperoniPickups,
+    collectedPickups,
+    lastPepperoniSpawnAt,
+    walls: GAME_SURVIVAL_WALLS,
+    solo,
+    updatedAt: now
+  };
+  gameLocalPlayer = player;
+}
+
+function gameSurvivalFrozen(solo = {}, now = Date.now()) {
+  return Boolean(now < Number(solo.countdownUntil || 0) || now < Number(solo.waveBannerUntil || 0));
+}
+
+function gameSurvivalEnded() {
+  return gameViewMode === "solo" && Boolean(gameState?.solo?.gameOver);
+}
+
+function startNextSurvivalWave(wave, now = Date.now()) {
+  return {
+    zombies: createSurvivalWaveZombies(wave, now),
+    solo: {
+      wave,
+      waveBannerUntil: now + GAME_SURVIVAL_WAVE_BANNER_MS
+    }
+  };
+}
+
+function survivalWaveCleared(zombies = []) {
+  return zombies.length > 0 && zombies.every((zombie) => !zombie.alive);
+}
+
+function createSurvivalWaveZombies(wave = 1, now = Date.now()) {
+  const count = gameSurvivalZombieCount(wave);
+  return Array.from({ length: count }, (_, index) => {
+    const spawn = randomSurvivalGateSpawn(index);
+    const angle = Math.atan2(GAME_ARENA.height / 2 - spawn.y, GAME_ARENA.width / 2 - spawn.x);
+    return {
+      id: `survival-${wave}-${index + 1}-${now}`,
+      x: spawn.x,
+      y: spawn.y,
+      vx: Math.cos(angle),
+      vy: Math.sin(angle),
+      facing: Math.cos(angle) < 0 ? -1 : 1,
+      alive: true,
+      deadUntil: 0,
+      speed: gameSurvivalZombieSpeed(wave),
+      nextTurnAt: now + randomGameZombieTurnDelay()
+    };
+  });
+}
+
+function gameSurvivalZombieCount(wave = 1) {
+  return Math.min(32, 4 + wave * 2);
+}
+
+function gameSurvivalZombieSpeed(wave = 1) {
+  return Math.min(155, GAME_ZOMBIE_SPEED + Math.max(0, wave - 1) * 6);
+}
+
+function randomSurvivalGateSpawn(index = 0) {
+  const gate = GAME_SURVIVAL_GATES[index % GAME_SURVIVAL_GATES.length];
+  const offset = gameRandomBetween(gate.min, gate.max);
+  if (gate.side === "top" || gate.side === "bottom") return { x: offset, y: gate.y };
+  return { x: gate.x, y: offset };
+}
+
+function moveSurvivalZombies(zombies = [], player, dt, now = Date.now()) {
+  return zombies.map((zombie) => {
+    if (!zombie.alive) return zombie;
+    const threat = player?.alive && player.powerup === "meatball" ? player : null;
+    const target = !threat && player?.alive && !(player.deadUntil && now < player.deadUntil) ? player : null;
+    const direct = threat
+      ? gameNormalizedVector(zombie.x - threat.x, zombie.y - threat.y)
+      : target ? gameNormalizedVector(target.x - zombie.x, target.y - zombie.y) : gameNormalizedVector(zombie.vx || 1, zombie.vy || 0);
+    const focus = threat || target || { x: zombie.x + direct.x, y: zombie.y + direct.y };
+    const mode = threat ? "flee" : "chase";
+    const vector = gameLineBlockedByWalls(zombie.x, zombie.y, focus.x, focus.y, GAME_ZOMBIE_RADIUS + 3, GAME_SURVIVAL_WALLS)
+      ? gameBestSurvivalZombieDirection(zombie, direct, focus, mode)
+      : direct;
+    let moved = {
+      ...zombie,
+      vx: vector.x,
+      vy: vector.y,
+      x: zombie.x + vector.x * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
+      y: zombie.y + vector.y * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
+      facing: vector.x < -0.04 ? -1 : vector.x > 0.04 ? 1 : zombie.facing || 1
+    };
+    const hitX = GAME_SURVIVAL_WALLS.some((wall) => gameCircleRectHit(moved.x, zombie.y, GAME_ZOMBIE_RADIUS, wall));
+    const hitY = GAME_SURVIVAL_WALLS.some((wall) => gameCircleRectHit(moved.x, moved.y, GAME_ZOMBIE_RADIUS, wall));
+    if (hitX) moved.x = zombie.x;
+    if (hitY) moved.y = zombie.y;
+    moved.x = gameClamp(moved.x, -GAME_ZOMBIE_RADIUS - 18, GAME_ARENA.width + GAME_ZOMBIE_RADIUS + 18);
+    moved.y = gameClamp(moved.y, -GAME_ZOMBIE_RADIUS - 18, GAME_ARENA.height + GAME_ZOMBIE_RADIUS + 18);
+    return moved;
+  });
+}
+
+function gameBestSurvivalZombieDirection(zombie, preferred, focus, mode) {
+  const perpendicular = { x: -preferred.y, y: preferred.x };
+  const candidates = [
+    preferred,
+    gameNormalizedVector(preferred.x + perpendicular.x * 0.9, preferred.y + perpendicular.y * 0.9),
+    gameNormalizedVector(preferred.x - perpendicular.x * 0.9, preferred.y - perpendicular.y * 0.9),
+    perpendicular,
+    { x: -perpendicular.x, y: -perpendicular.y },
+    gameNormalizedVector(preferred.x * 0.35 + perpendicular.x, preferred.y * 0.35 + perpendicular.y),
+    gameNormalizedVector(preferred.x * 0.35 - perpendicular.x, preferred.y * 0.35 - perpendicular.y)
+  ];
+  const step = GAME_ZOMBIE_RADIUS * 2.3;
+  return candidates
+    .filter((candidate) => candidate.x || candidate.y)
+    .map((candidate) => {
+      const x = zombie.x + candidate.x * step;
+      const y = zombie.y + candidate.y * step;
+      const blocked = x < -GAME_ZOMBIE_RADIUS - 20
+        || x > GAME_ARENA.width + GAME_ZOMBIE_RADIUS + 20
+        || y < -GAME_ZOMBIE_RADIUS - 20
+        || y > GAME_ARENA.height + GAME_ZOMBIE_RADIUS + 20
+        || GAME_SURVIVAL_WALLS.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS, wall));
+      const distance = gameDistance(x, y, focus.x, focus.y);
+      return {
+        candidate,
+        score: (mode === "flee" ? -distance : distance) + (blocked ? 10000 : 0)
+      };
+    })
+    .sort((a, b) => a.score - b.score)[0]?.candidate || preferred;
+}
+
+function resolveSurvivalHits(player, projectiles, zombies, pepperoniPickups, solo, now = Date.now()) {
+  Object.values(projectiles).forEach((shot) => {
+    if (shot.ownerUid !== currentUser.uid) return;
+    const shotType = shot.type || "pepperoni";
+    if (shotType === "mushroom" && now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS) {
+      explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
+      return;
+    }
+    if (gameProjectileHitsWall(shot)) {
+      if (shotType === "mushroom") explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
+      else {
+        markGameProjectileRemoved(shot, now);
+        delete projectiles[shot.id];
+      }
+      return;
+    }
+    zombies.forEach((zombie) => {
+      if (!projectiles[shot.id] || !zombie.alive) return;
+      if (gameDistance(zombie.x, zombie.y, shot.x, shot.y) < GAME_ZOMBIE_RADIUS + GAME_PIZZA_PROJECTILE_SIZE / 2) {
+        if (shotType === "mushroom") explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
+        else {
+          killSurvivalZombie(zombie);
+          markGameProjectileRemoved(shot, now);
+          delete projectiles[shot.id];
+        }
+      }
+    });
+  });
+
+  if (player.alive && player.powerup === "meatball") {
+    zombies.forEach((zombie) => {
+      if (zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < GAME_MEATBALL_SIZE / 2 + GAME_ZOMBIE_RADIUS) {
+        killSurvivalZombie(zombie);
+      }
+    });
+  }
+
+  const playerIsRespawning = player.deadUntil && now < player.deadUntil;
+  if (player.alive && !playerIsRespawning && !gamePlayerShielded(player, now) && player.powerup !== "meatball") {
+    const touched = zombies.some((zombie) => zombie.alive && gameDistance(player.x, player.y, zombie.x, zombie.y) < gamePlayerHitRadius(player) + GAME_ZOMBIE_RADIUS);
+    if (touched) markSurvivalPlayerHit(player, pepperoniPickups, solo, now);
+  }
+}
+
+function explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now = Date.now()) {
+  addGameExplosionEffect(shot.x, shot.y, GAME_MUSHROOM_SPLASH_RADIUS, now);
+  if (player.alive && player.powerup !== "meatball" && !gamePlayerShielded(player, now)) {
+    const playerIsRespawning = player.deadUntil && now < player.deadUntil;
+    if (!playerIsRespawning && gameDistance(player.x, player.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + gamePlayerHitRadius(player)) {
+      markSurvivalPlayerHit(player, pepperoniPickups, solo, now);
+    }
+  }
+  zombies.forEach((zombie) => {
+    if (zombie.alive && gameDistance(zombie.x, zombie.y, shot.x, shot.y) <= GAME_MUSHROOM_SPLASH_RADIUS + GAME_ZOMBIE_RADIUS) {
+      killSurvivalZombie(zombie);
+    }
+  });
+  markGameProjectileRemoved(shot, now);
+  delete projectiles[shot.id];
+}
+
+function killSurvivalZombie(zombie) {
+  zombie.alive = false;
+  zombie.deadUntil = 0;
+}
+
+function markSurvivalPlayerHit(player, pepperoniPickups, solo, now = Date.now()) {
+  if (solo.gameOver) return;
+  solo.lives = Math.max(0, Number(solo.lives || 0) - 1);
+  dropGamePepperoniPile(player, pepperoniPickups, now);
+  clearGamePlayerLoadout(player);
+  player.shieldUntil = 0;
+  if (solo.lives <= 0) {
+    player.alive = false;
+    player.deadUntil = 0;
+    solo.gameOver = true;
+    return;
+  }
+  player.alive = false;
+  player.deadUntil = now + GAME_RESPAWN_MS;
 }
 
 async function syncLocalGame(now) {
@@ -2807,12 +3154,16 @@ function gameNormalizedVector(x, y) {
 }
 
 function gameLineBlockedByWall(x1, y1, x2, y2, radius = 0) {
+  return gameLineBlockedByWalls(x1, y1, x2, y2, radius, GAME_WALLS);
+}
+
+function gameLineBlockedByWalls(x1, y1, x2, y2, radius = 0, walls = GAME_WALLS) {
   const steps = Math.max(6, Math.ceil(gameDistance(x1, y1, x2, y2) / 32));
   for (let index = 1; index < steps; index += 1) {
     const t = index / steps;
     const x = x1 + (x2 - x1) * t;
     const y = y1 + (y2 - y1) * t;
-    if (GAME_WALLS.some((wall) => gameCircleRectHit(x, y, radius, wall))) return true;
+    if (walls.some((wall) => gameCircleRectHit(x, y, radius, wall))) return true;
   }
   return false;
 }
@@ -2943,7 +3294,7 @@ function shootGamePizza() {
     ...gameRemoteProjectiles,
     [shotId]: shot
   };
-  writeGameArenaSharedState(gameState);
+  if (gameViewMode !== "solo") writeGameArenaSharedState(gameState);
 }
 
 function gameCurrentShotType(player) {
@@ -2974,6 +3325,17 @@ function drawGame() {
   drawGameExplosionEffects(ctx);
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
+  if (gameViewMode === "solo") {
+    const text = gameSurvivalOverlayText(gameState.solo);
+    if (text) drawGameCountdownOverlay(ctx, text);
+    if (gameState.solo?.gameOver) showGameArenaStatus(`Game over - Wave ${Number(gameState.solo.wave || 1)}`);
+    else if (text) showGameArenaStatus(text);
+    else hideGameArenaStatus();
+    renderSurvivalHud();
+    renderAmmoDisplay();
+    return;
+  }
+
   const match = gameState.match || defaultGameMatchState();
   if (gameMatchFrozen(match)) {
     showGameArenaStatus(gameMatchTimerText(match));
@@ -2990,6 +3352,13 @@ function drawGame() {
   }
   renderMatchLeaderboard();
   renderAmmoDisplay();
+}
+
+function gameSurvivalOverlayText(solo = {}, now = Date.now()) {
+  if (!solo || solo.gameOver) return solo?.gameOver ? "GAME OVER" : "";
+  if (now < Number(solo.countdownUntil || 0)) return gameCountdownText({ startedAt: Number(solo.countdownUntil || 0) }, now);
+  if (now < Number(solo.waveBannerUntil || 0)) return `WAVE ${Number(solo.wave || 1)}`;
+  return "";
 }
 
 function drawGameCountdownOverlay(ctx, text) {
@@ -3098,6 +3467,23 @@ function renderAmmoDisplay() {
   icon.style.opacity = String(ammo.iconFlashes ? flashAlpha : 1);
   count.style.opacity = String(ammo.labelFlashes ? flashAlpha : 1);
   drawGameAmmoIcon(icon, ammo.iconType);
+}
+
+function renderSurvivalHud() {
+  const livesEl = document.querySelector("#survival-lives");
+  const waveEl = document.querySelector("#survival-wave-strip");
+  if (!livesEl || !waveEl) return;
+  const solo = gameState?.solo || {};
+  const visible = gameViewMode === "solo";
+  livesEl.hidden = !visible;
+  waveEl.hidden = !visible;
+  if (!visible) return;
+  const lives = Math.max(0, Math.min(GAME_SURVIVAL_LIVES, Number(solo.lives || 0)));
+  livesEl.innerHTML = Array.from({ length: GAME_SURVIVAL_LIVES }, (_, index) => (
+    `<span class="survival-heart${index >= lives ? " empty" : ""}" aria-hidden="true">♥</span>`
+  )).join("");
+  livesEl.setAttribute("aria-label", `${lives} ${lives === 1 ? "life" : "lives"} left`);
+  waveEl.textContent = solo.gameOver ? `Game over - Wave ${Number(solo.wave || 1)}` : `Wave ${Number(solo.wave || 1)}`;
 }
 
 function gameAmmoInfo(player) {
@@ -3564,7 +3950,7 @@ function randomGameSpawn() {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const x = radius + 4 + Math.random() * (GAME_ARENA.width - (radius + 4) * 2);
     const y = radius + 4 + Math.random() * (GAME_ARENA.height - (radius + 4) * 2);
-    const blocked = state.walls.some((rect) => gameCircleRectHit(x, y, radius, rect))
+    const blocked = gamePlayerCollisionWalls().some((rect) => gameCircleRectHit(x, y, radius, rect))
       || (state.zombies || []).some((zombie) => zombie.alive && gameDistance(x, y, zombie.x, zombie.y) < radius + 72);
     if (!blocked) return { x, y };
   }
@@ -3583,9 +3969,14 @@ function gameInputVector() {
 function moveGamePlayerWithWalls(x, y, dx, dy, radius = GAME_PLAYER_SIZE / 2) {
   let nextX = gameClamp(x + dx, radius, GAME_ARENA.width - radius);
   let nextY = gameClamp(y + dy, radius, GAME_ARENA.height - radius);
-  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, y, radius, wall))) nextX = x;
-  if (gameState.walls.some((wall) => gameCircleRectHit(nextX, nextY, radius, wall))) nextY = y;
+  const walls = gamePlayerCollisionWalls();
+  if (walls.some((wall) => gameCircleRectHit(nextX, y, radius, wall))) nextX = x;
+  if (walls.some((wall) => gameCircleRectHit(nextX, nextY, radius, wall))) nextY = y;
   return { x: nextX, y: nextY };
+}
+
+function gamePlayerCollisionWalls() {
+  return gameViewMode === "solo" ? GAME_WALLS : gameState?.walls || GAME_WALLS;
 }
 
 function resolveGameCircleOverlap(x, y, radius) {
@@ -3748,6 +4139,8 @@ function cleanupGame() {
   document.documentElement.classList.remove("game-active-root");
   document.body.classList.remove("game-active");
   document.body.classList.remove("game-playing");
+  document.body.classList.remove("game-freeplay");
+  document.body.classList.remove("game-solo");
   if (gameTouchMoveLocked) {
     document.removeEventListener("touchmove", preventGamePageDrag);
     gameTouchMoveLocked = false;
@@ -3757,6 +4150,14 @@ function cleanupGame() {
   cleanupGameArenaListener();
   gameAnimationId = null;
   gameLobbyPresenceTimer = null;
+  resetLocalGameRuntime();
+  gameJoinedArena = false;
+  gameMatchExitPending = false;
+  window.removeEventListener("keydown", handleGameKeyDown);
+  window.removeEventListener("keyup", handleGameKeyUp);
+}
+
+function resetLocalGameRuntime() {
   gameState = null;
   gameLocalPlayer = null;
   gameRemoteProjectiles = {};
@@ -3769,10 +4170,6 @@ function cleanupGame() {
   gameConsumedHitIds = new Set();
   gameRemovedProjectileIds = new Set();
   gameConsumedPickupIds = new Set();
-  gameJoinedArena = false;
-  gameMatchExitPending = false;
-  window.removeEventListener("keydown", handleGameKeyDown);
-  window.removeEventListener("keyup", handleGameKeyUp);
 }
 
 function preventGamePageDrag(event) {
