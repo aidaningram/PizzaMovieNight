@@ -997,6 +997,8 @@ function attachGameMenuControls() {
   });
   document.querySelector("#return-game-menu-button")?.addEventListener("click", () => returnGameMenu());
   document.querySelector("#end-free-play-button")?.addEventListener("click", () => enterGameFreePlay());
+  document.querySelector("#survival-return-menu-button")?.addEventListener("click", () => returnGameMenu());
+  document.querySelector("#survival-play-again-button")?.addEventListener("click", () => enterGameSurvival());
 }
 
 function enterGameFreePlay() {
@@ -1254,6 +1256,8 @@ function updateGameModePanels() {
   const waveStrip = document.querySelector("#survival-wave-strip");
   const lives = document.querySelector("#survival-lives");
   const endPanel = document.querySelector("#match-end-panel");
+  const survivalEndPanel = document.querySelector("#survival-end-panel");
+  const survivalEndSummary = document.querySelector("#survival-end-summary");
   const recordsPanel = document.querySelector("#game-records-panel");
   const active = gameActiveContestants(arena);
   const effectiveQueued = { ...(match.queued || {}) };
@@ -1279,6 +1283,11 @@ function updateGameModePanels() {
   if (mobileControls) mobileControls.hidden = gameViewMode === "spectate";
   if (spectatorPanel) spectatorPanel.hidden = gameViewMode !== "spectate";
   if (endPanel) endPanel.hidden = !gameMatchEnded(match);
+  if (survivalEndPanel) survivalEndPanel.hidden = !(gameViewMode === "solo" && gameSurvivalEnded());
+  if (survivalEndSummary) {
+    const wave = Number(gameState?.solo?.wave || 1);
+    survivalEndSummary.textContent = `You made it to Wave ${wave}.`;
+  }
   if (recordsPanel) recordsPanel.hidden = showPlay;
 
   if (freeButton) freeButton.disabled = inProgress && !isParticipant;
@@ -2172,17 +2181,9 @@ function resolveSurvivalHits(player, projectiles, zombies, pepperoniPickups, sol
       explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
       return;
     }
-    if (gameProjectileHitsWall(shot)) {
-      if (shotType === "mushroom") explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
-      else {
-        markGameProjectileRemoved(shot, now);
-        delete projectiles[shot.id];
-      }
-      return;
-    }
     zombies.forEach((zombie) => {
       if (!projectiles[shot.id] || !zombie.alive) return;
-      if (gameDistance(zombie.x, zombie.y, shot.x, shot.y) < GAME_ZOMBIE_RADIUS + GAME_PIZZA_PROJECTILE_SIZE / 2) {
+      if (gameProjectileHitsCircle(shot, zombie.x, zombie.y, GAME_ZOMBIE_RADIUS)) {
         if (shotType === "mushroom") explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
         else {
           killSurvivalZombie(zombie);
@@ -2191,6 +2192,14 @@ function resolveSurvivalHits(player, projectiles, zombies, pepperoniPickups, sol
         }
       }
     });
+    if (!projectiles[shot.id]) return;
+    if (gameProjectileHitsWall(shot)) {
+      if (shotType === "mushroom") explodeSurvivalProjectile(shot, player, zombies, pepperoniPickups, projectiles, solo, now);
+      else {
+        markGameProjectileRemoved(shot, now);
+        delete projectiles[shot.id];
+      }
+    }
   });
 
   if (player.alive && player.powerup === "meatball") {
@@ -2545,7 +2554,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
       if (!projectiles[shot.id]) return;
       const playerIsRespawning = player.deadUntil && now < player.deadUntil;
       if (!player.alive || player.powerup === "meatball" || playerIsRespawning || gamePlayerShielded(player, now) || hits[player.uid] || player.uid === shot.ownerUid) return;
-      if (gameDistance(player.x, player.y, shot.x, shot.y) < gamePlayerHitRadius(player) + GAME_PIZZA_PROJECTILE_SIZE / 2) {
+      if (gameProjectileHitsCircle(shot, player.x, player.y, gamePlayerHitRadius(player))) {
         if (shotType === "mushroom") {
           explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
@@ -2558,7 +2567,7 @@ function resolveGameHits(players, projectiles, zombies, zombieDeaths, leaderboar
     if (!projectiles[shot.id]) return;
     zombies.forEach((zombie) => {
       if (!projectiles[shot.id] || !zombie.alive) return;
-      if (gameDistance(zombie.x, zombie.y, shot.x, shot.y) < GAME_ZOMBIE_RADIUS + GAME_PIZZA_PROJECTILE_SIZE / 2) {
+      if (gameProjectileHitsCircle(shot, zombie.x, zombie.y, GAME_ZOMBIE_RADIUS)) {
         if (shotType === "mushroom") {
           explodeGameProjectile(shot, players, zombies, zombieDeaths, leaderboard, nextKillLog, hits, pepperoniPickups, projectiles, now);
         } else {
@@ -3203,13 +3212,14 @@ function pruneGameProjectiles(projectiles, now) {
   Object.values(projectiles || {}).forEach((shot) => {
     if (gameRemovedProjectileIds.has(shot.id)) return;
     const shotType = shot.type || "pepperoni";
-    const mushroomWaitingToBurst = shotType === "mushroom" && (gameProjectileHitsWall(shot) || now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS);
+    const wallHit = gameProjectileHitsWall(shot);
+    const mushroomWaitingToBurst = shotType === "mushroom" && (wallHit || now - Number(shot.createdAt || now) >= GAME_MUSHROOM_FUSE_MS);
     const shotLife = Number(shot.lifeMs || GAME_PIZZA_LIFE_MS);
-    if (now - shot.createdAt > shotLife || !gameProjectileInBounds(shot) || (shotType !== "mushroom" && gameProjectileHitsWall(shot))) {
+    if (now - shot.createdAt > shotLife || !gameProjectileInBounds(shot)) {
       markGameProjectileRemoved(shot, now);
       return;
     }
-    next[shot.id] = { ...shot, burstReady: mushroomWaitingToBurst || Boolean(shot.burstReady) };
+    next[shot.id] = { ...shot, wallHit, burstReady: mushroomWaitingToBurst || Boolean(shot.burstReady) };
   });
   return next;
 }
@@ -3225,11 +3235,28 @@ function gameProjectileInBounds(shot) {
     && shot.y <= GAME_ARENA.height + GAME_PIZZA_BOUNDS_PADDING;
 }
 
+function gameProjectileHitsCircle(shot, x, y, radius) {
+  const startX = Number.isFinite(shot.prevX) ? shot.prevX : shot.x;
+  const startY = Number.isFinite(shot.prevY) ? shot.prevY : shot.y;
+  const hitRadius = radius + GAME_PIZZA_PROJECTILE_SIZE / 2;
+  return gamePointSegmentDistance(x, y, startX, startY, shot.x, shot.y) <= hitRadius;
+}
+
+function gamePointSegmentDistance(px, py, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (!dx && !dy) return gameDistance(px, py, ax, ay);
+  const t = gameClamp(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+  return gameDistance(px, py, ax + dx * t, ay + dy * t);
+}
+
 function moveGameProjectiles(projectiles, dt, now = Date.now()) {
   return Object.fromEntries(Object.values(projectiles || {}).map((shot) => [
     shot.id,
     {
       ...shot,
+      prevX: shot.x,
+      prevY: shot.y,
       x: shot.x + shot.vx * dt,
       y: shot.y + shot.vy * dt,
       updatedAt: now
@@ -3270,11 +3297,15 @@ function shootGamePizza() {
   const shotId = `${currentUser.uid}-${now}`;
   const mag = Math.hypot(gameAim.x, gameAim.y) || 1;
   const shotOffset = GAME_PLAYER_SIZE / 2 + 12;
+  const shotX = gameLocalPlayer.x + (gameAim.x / mag) * shotOffset;
+  const shotY = gameLocalPlayer.y + (gameAim.y / mag) * shotOffset;
   const shot = {
     id: shotId,
     ownerUid: currentUser.uid,
-    x: gameLocalPlayer.x + (gameAim.x / mag) * shotOffset,
-    y: gameLocalPlayer.y + (gameAim.y / mag) * shotOffset,
+    prevX: shotX,
+    prevY: shotY,
+    x: shotX,
+    y: shotY,
     vx: (gameAim.x / mag) * GAME_PIZZA_SPEED,
     vy: (gameAim.y / mag) * GAME_PIZZA_SPEED,
     type: shotType,
@@ -3328,8 +3359,10 @@ function drawGame() {
   if (gameViewMode === "solo") {
     const text = gameSurvivalOverlayText(gameState.solo);
     if (text) drawGameCountdownOverlay(ctx, text);
-    if (gameState.solo?.gameOver) showGameArenaStatus(`Game over - Wave ${Number(gameState.solo.wave || 1)}`);
-    else if (text) showGameArenaStatus(text);
+    if (gameState.solo?.gameOver) {
+      showGameArenaStatus(`Game over - Wave ${Number(gameState.solo.wave || 1)}`);
+      updateGameModePanels();
+    } else if (text) showGameArenaStatus(text);
     else hideGameArenaStatus();
     renderSurvivalHud();
     renderAmmoDisplay();
