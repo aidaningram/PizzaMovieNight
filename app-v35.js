@@ -83,7 +83,7 @@ const GAME_REMOVED_PROJECTILE_TTL_MS = 3500;
 const GAME_BASIL_FIRE_MS = 90;
 const GAME_BASIL_LIFE_MS = 496;
 const GAME_MEATBALL_SIZE = 84;
-const GAME_HEARTBEAT_MS = 45;
+const GAME_HEARTBEAT_MS = 75;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_REMOTE_PLAYER_SMOOTHING = 18;
 const GAME_REMOTE_PLAYER_SNAP_DISTANCE = 180;
@@ -933,6 +933,7 @@ function renderGamePage() {
   if (FIREBASE_READY && services?.rtdb) {
     setupGameDisconnectCleanup();
     subscribeGameArena();
+    writeGameLobbyPresence("menu");
   } else {
     writeGameLobbyPresence("menu");
   }
@@ -947,7 +948,6 @@ function subscribeGameArena() {
     const nextArena = snap.val();
     familyData = { ...familyData, gameArena: nextArena };
     if (nextArena) receiveGameSnapshot();
-    if (!gameJoinedArena) writeGameLobbyPresence(gameViewMode);
     updateGameModePanels();
     maybeStartQueuedMatch();
   }, () => {
@@ -1187,8 +1187,10 @@ function updateGameModePanels() {
   const endPanel = document.querySelector("#match-end-panel");
   const recordsPanel = document.querySelector("#game-records-panel");
   const active = gameActiveContestants(arena);
-  const queuedCount = active.filter((entry) => match.queued?.[entry.uid]).length;
-  const isQueued = Boolean(gameMatchQueued || match.queued?.[currentUser?.uid]);
+  const effectiveQueued = { ...(match.queued || {}) };
+  if (gameMatchQueued && currentUser?.uid) effectiveQueued[currentUser.uid] = true;
+  const queuedCount = active.filter((entry) => effectiveQueued[entry.uid]).length;
+  const isQueued = Boolean(currentUser?.uid && effectiveQueued[currentUser.uid]);
   const everyoneQueued = active.length > 1 && queuedCount === active.length;
   const canQueue = active.length > 1 && !inProgress && match.status !== "ended";
 
@@ -1365,7 +1367,12 @@ function maybeStartQueuedMatch() {
   const queued = match.queued || {};
   const everyoneQueued = contestants.length > 1 && contestants.every((entry) => queued[entry.uid]);
   if (!everyoneQueued) return;
+  if (currentUser?.uid !== gameQueuedHostUid(queued)) return;
   startGameMatch(contestants);
+}
+
+function gameQueuedHostUid(queued = {}) {
+  return Object.keys(queued || {}).filter((uid) => queued[uid]).sort()[0] || currentUser?.uid || "";
 }
 
 async function startGameMatch(contestants) {
@@ -1418,16 +1425,17 @@ function receiveGameSnapshot() {
   if (!document.querySelector("#game-canvas")) return;
   const now = Date.now();
   const remoteGame = normalizeGame(familyData?.gameArena);
+  if (currentUser?.uid) gameMatchQueued = Boolean(remoteGame.match?.queued?.[currentUser.uid]);
   syncGameViewWithMatch(remoteGame);
   if (gameMatchExitPending && gameViewMode === "menu") return;
   const zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.zombieDeaths, gameState?.zombieDeaths), now);
   const removedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(remoteGame.removedProjectiles, gameState?.removedProjectiles), now, GAME_REMOVED_PROJECTILE_TTL_MS);
   syncGameRemovedProjectiles(removedProjectiles);
   const ownPlayer = gameLocalPlayer || remoteGame.players[currentUser?.uid];
-  const players = {
+  const players = pruneGamePlayers({
     ...remoteGame.players,
     ...(ownPlayer ? { [currentUser.uid]: ownPlayer } : {})
-  };
+  });
   gameRemoteProjectiles = remoteGame.projectiles;
   const localZombies = gameState?.version === GAME_VERSION && gameState?.zombies?.length ? gameState.zombies : null;
   const remoteZombies = applyGameZombieDeaths(remoteGame.zombies, zombieDeaths);
@@ -1819,7 +1827,7 @@ function updateLocalGame(dt, now) {
   const zombieDeathsSignatureBefore = gameTimedMapSignature(gameState.zombieDeaths || {});
   const removedProjectilesSignatureBefore = gameTimedMapSignature(gameState.removedProjectiles || {});
   const explosionSignatureBefore = gameTimedMapSignature(gameState.explosionEffects || {});
-  const players = { ...gameState.players, [currentUser.uid]: player };
+  const players = pruneGamePlayers({ ...gameState.players, [currentUser.uid]: player });
   const isHost = currentUser.uid === gameHostUid(players);
   const serverGame = normalizeGame(familyData?.gameArena);
   let zombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(serverGame.zombieDeaths, gameState.zombieDeaths), now);
@@ -2078,7 +2086,6 @@ function applyMatchRecords(arena = normalizeGame(gameState || familyData?.gameAr
 
 async function writeGameArena(nextArena) {
   const existingArena = familyData?.gameArena || {};
-  const existingPlayers = existingArena.players || {};
   const existingZombies = existingArena.zombies;
   familyData = { ...familyData, gameArena: nextArena };
   if (!FIREBASE_READY) {
@@ -2090,14 +2097,13 @@ async function writeGameArena(nextArena) {
   const patch = {
     version: GAME_VERSION,
     updatedAt: Date.now(),
-    freeScores: nextArena.freeScores || {},
     records: normalizeGameRecords(nextArena.records),
     [`players/${currentUser.uid}`]: player,
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode)
   };
-  Object.keys(existingPlayers).forEach((uid) => {
-    if (!nextArena.players?.[uid]) patch[`players/${uid}`] = null;
-  });
+  if (nextArena.freeScores?.[currentUser.uid]) {
+    patch[`freeScores/${currentUser.uid}`] = nextArena.freeScores[currentUser.uid];
+  }
   if (isHost || !existingZombies) {
     const mergedZombieDeaths = mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths);
     const mergedRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(existingArena.removedProjectiles, nextArena.removedProjectiles), Date.now(), GAME_REMOVED_PROJECTILE_TTL_MS);
@@ -2146,13 +2152,15 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     pepperoniPickups: gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {}),
     lastPepperoniSpawnAt: Number(nextArena.lastPepperoniSpawnAt || 0),
     leaderboard: Object.keys(nextArena.leaderboard || {}).length ? nextArena.leaderboard : null,
-    freeScores: Object.keys(nextArena.freeScores || {}).length ? nextArena.freeScores : null,
     records: normalizeGameRecords(nextArena.records),
     hits: Object.keys(nextArena.hits || {}).length ? nextArena.hits : null,
     killLog: nextArena.killLog || [],
     [`lobby/${currentUser.uid}`]: gameLobbyEntry(gameViewMode),
     updatedAt: Date.now()
   };
+  if (nextArena.freeScores?.[currentUser.uid]) {
+    patch[`freeScores/${currentUser.uid}`] = nextArena.freeScores[currentUser.uid];
+  }
   if (nextArena.match?.status === "active" || nextArena.match?.status === "ended") {
     patch.match = mergeGameMatch(familyData?.gameArena?.match, nextArena.match);
   }
