@@ -3395,11 +3395,8 @@ function drawGame() {
   if (gameViewMode === "solo") {
     const text = gameSurvivalOverlayText(gameState.solo);
     if (text) drawGameCountdownOverlay(ctx, text);
-    if (gameState.solo?.gameOver) {
-      showGameArenaStatus(`Game over - Wave ${Number(gameState.solo.wave || 1)}`);
-      updateGameModePanels();
-    } else if (text) showGameArenaStatus(text);
-    else hideGameArenaStatus();
+    hideGameArenaStatus();
+    if (gameState.solo?.gameOver) updateGameModePanels();
     renderSurvivalHud();
     renderAmmoDisplay();
     return;
@@ -3552,7 +3549,7 @@ function renderSurvivalHud() {
     `<span class="survival-heart${index >= lives ? " empty" : ""}" aria-hidden="true">♥</span>`
   )).join("");
   livesEl.setAttribute("aria-label", `${lives} ${lives === 1 ? "life" : "lives"} left`);
-  waveEl.textContent = solo.gameOver ? `Game over - Wave ${Number(solo.wave || 1)}` : `Wave ${Number(solo.wave || 1)}`;
+  waveEl.textContent = `Wave ${Number(solo.wave || 1)}`;
 }
 
 function gameAmmoInfo(player) {
