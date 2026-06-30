@@ -51,6 +51,7 @@ const GAME_ZOMBIE_MAX = 6;
 const GAME_ZOMBIE_MAX_AGGRO = 3;
 const GAME_ZOMBIE_SIZE = 44;
 const GAME_ZOMBIE_RADIUS = 22;
+const GAME_ZOMBIE_SEPARATION = GAME_ZOMBIE_RADIUS * 2 + 6;
 const GAME_ZOMBIE_SPEED = 82;
 const GAME_ZOMBIE_AGGRO_RADIUS = 300;
 const GAME_ZOMBIE_RESPAWN_MS = 7000;
@@ -73,6 +74,7 @@ const GAME_SURVIVAL_LIVES = 3;
 const GAME_SURVIVAL_WAVE_BANNER_MS = 1300;
 const GAME_SURVIVAL_GATE_SIZE = 150;
 const GAME_SURVIVAL_GATE_PADDING = 34;
+const GAME_SURVIVAL_ENTRY_DEPTH = GAME_ZOMBIE_RADIUS + 46;
 const GAME_SURVIVAL_X_GATE_START = (GAME_ARENA.width - GAME_SURVIVAL_GATE_SIZE) / 2;
 const GAME_SURVIVAL_X_GATE_END = GAME_SURVIVAL_X_GATE_START + GAME_SURVIVAL_GATE_SIZE;
 const GAME_SURVIVAL_Y_GATE_START = (GAME_ARENA.height - GAME_SURVIVAL_GATE_SIZE) / 2;
@@ -2080,7 +2082,7 @@ function createSurvivalWaveZombies(wave = 1, now = Date.now()) {
   const count = gameSurvivalZombieCount(wave);
   return Array.from({ length: count }, (_, index) => {
     const spawn = randomSurvivalGateSpawn(index);
-    const angle = Math.atan2(GAME_ARENA.height / 2 - spawn.y, GAME_ARENA.width / 2 - spawn.x);
+    const angle = Math.atan2(spawn.entryY - spawn.y, spawn.entryX - spawn.x);
     return {
       id: `survival-${wave}-${index + 1}-${now}`,
       x: spawn.x,
@@ -2091,6 +2093,10 @@ function createSurvivalWaveZombies(wave = 1, now = Date.now()) {
       alive: true,
       deadUntil: 0,
       enteredArena: false,
+      gateSide: spawn.side,
+      entryX: spawn.entryX,
+      entryY: spawn.entryY,
+      spawnedAt: now,
       speed: gameSurvivalZombieSpeed(wave),
       nextTurnAt: now + randomGameZombieTurnDelay()
     };
@@ -2108,8 +2114,10 @@ function gameSurvivalZombieSpeed(wave = 1) {
 function randomSurvivalGateSpawn(index = 0) {
   const gate = GAME_SURVIVAL_GATES[index % GAME_SURVIVAL_GATES.length];
   const offset = gameRandomBetween(gate.min, gate.max);
-  if (gate.side === "top" || gate.side === "bottom") return { x: offset, y: gate.y };
-  return { x: gate.x, y: offset };
+  if (gate.side === "top") return { side: gate.side, x: offset, y: gate.y, entryX: offset, entryY: GAME_SURVIVAL_ENTRY_DEPTH };
+  if (gate.side === "bottom") return { side: gate.side, x: offset, y: gate.y, entryX: offset, entryY: GAME_ARENA.height - GAME_SURVIVAL_ENTRY_DEPTH };
+  if (gate.side === "left") return { side: gate.side, x: gate.x, y: offset, entryX: GAME_SURVIVAL_ENTRY_DEPTH, entryY: offset };
+  return { side: gate.side, x: gate.x, y: offset, entryX: GAME_ARENA.width - GAME_SURVIVAL_ENTRY_DEPTH, entryY: offset };
 }
 
 function gameSurvivalZombieInnerBounds() {
@@ -2123,9 +2131,39 @@ function gameSurvivalZombieInnerBounds() {
 }
 
 function moveSurvivalZombies(zombies = [], player, dt, now = Date.now()) {
-  return zombies.map((zombie) => {
+  const movedZombies = zombies.map((zombie) => {
     if (!zombie.alive) return zombie;
     const enteredArena = Boolean(zombie.enteredArena || gameSurvivalZombieInsideArena(zombie));
+    if (!enteredArena) {
+      const entry = gameSurvivalZombieEntryTarget(zombie);
+      const entryOverdue = now - Number(zombie.spawnedAt ?? (now - 7000)) > 6500;
+      const vector = gameNormalizedVector(entry.x - zombie.x, entry.y - zombie.y);
+      const moved = {
+        ...zombie,
+        enteredArena: false,
+        entryX: entry.x,
+        entryY: entry.y,
+        vx: vector.x,
+        vy: vector.y,
+        x: zombie.x + vector.x * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
+        y: zombie.y + vector.y * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
+        facing: vector.x < -0.04 ? -1 : vector.x > 0.04 ? 1 : zombie.facing || 1
+      };
+      if (entryOverdue) {
+        moved.x = entry.x;
+        moved.y = entry.y;
+      }
+      if (gameDistance(moved.x, moved.y, entry.x, entry.y) < GAME_ZOMBIE_RADIUS || gameSurvivalZombieInsideArena(moved)) {
+        const bounds = gameSurvivalZombieInnerBounds();
+        moved.enteredArena = true;
+        moved.x = gameClamp(moved.x, bounds.minX, bounds.maxX);
+        moved.y = gameClamp(moved.y, bounds.minY, bounds.maxY);
+      } else {
+        moved.x = gameClamp(moved.x, -GAME_ZOMBIE_RADIUS - 18, GAME_ARENA.width + GAME_ZOMBIE_RADIUS + 18);
+        moved.y = gameClamp(moved.y, -GAME_ZOMBIE_RADIUS - 18, GAME_ARENA.height + GAME_ZOMBIE_RADIUS + 18);
+      }
+      return moved;
+    }
     const walls = enteredArena ? GAME_WALLS : GAME_SURVIVAL_WALLS;
     const threat = player?.alive && player.powerup === "meatball" ? player : null;
     const target = !threat && player?.alive && !(player.deadUntil && now < player.deadUntil) ? player : null;
@@ -2135,11 +2173,11 @@ function moveSurvivalZombies(zombies = [], player, dt, now = Date.now()) {
     const focus = threat || target || { x: zombie.x + direct.x, y: zombie.y + direct.y };
     const mode = threat ? "flee" : "chase";
     const vector = gameLineBlockedByWalls(zombie.x, zombie.y, focus.x, focus.y, GAME_ZOMBIE_RADIUS + 3, walls)
-      ? gameBestSurvivalZombieDirection(zombie, direct, focus, mode, walls, enteredArena)
+      ? gameBestSurvivalZombieDirection(zombie, direct, focus, mode, walls)
       : direct;
     let moved = {
       ...zombie,
-      enteredArena,
+      enteredArena: true,
       vx: vector.x,
       vy: vector.y,
       x: zombie.x + vector.x * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
@@ -2148,8 +2186,21 @@ function moveSurvivalZombies(zombies = [], player, dt, now = Date.now()) {
     };
     const hitX = walls.some((wall) => gameCircleRectHit(moved.x, zombie.y, GAME_ZOMBIE_RADIUS, wall));
     const hitY = walls.some((wall) => gameCircleRectHit(moved.x, moved.y, GAME_ZOMBIE_RADIUS, wall));
-    if (hitX) moved.x = zombie.x;
-    if (hitY) moved.y = zombie.y;
+    if (hitX || hitY) {
+      const avoid = gameBestSurvivalZombieDirection(zombie, direct, focus, mode, walls);
+      const retry = {
+        ...zombie,
+        enteredArena: true,
+        vx: avoid.x,
+        vy: avoid.y,
+        x: zombie.x + avoid.x * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
+        y: zombie.y + avoid.y * Number(zombie.speed || GAME_ZOMBIE_SPEED) * dt,
+        facing: avoid.x < -0.04 ? -1 : avoid.x > 0.04 ? 1 : zombie.facing || 1
+      };
+      moved = gameZombiePositionBlocked(retry.x, retry.y, GAME_WALLS, gameSurvivalZombieInnerBounds())
+        ? turnGameZombie({ ...zombie, enteredArena: true, x: zombie.x, y: zombie.y }, now)
+        : retry;
+    }
     if (enteredArena || gameSurvivalZombieInsideArena(moved)) {
       const bounds = gameSurvivalZombieInnerBounds();
       moved.enteredArena = true;
@@ -2161,6 +2212,7 @@ function moveSurvivalZombies(zombies = [], player, dt, now = Date.now()) {
     }
     return moved;
   });
+  return separateGameZombies(movedZombies, GAME_WALLS, gameSurvivalZombieInnerBounds(), (zombie) => zombie.alive && zombie.enteredArena);
 }
 
 function gameSurvivalZombieInsideArena(zombie) {
@@ -2171,42 +2223,16 @@ function gameSurvivalZombieInsideArena(zombie) {
     && zombie.y <= bounds.maxY;
 }
 
-function gameBestSurvivalZombieDirection(zombie, preferred, focus, mode, walls = GAME_SURVIVAL_WALLS, enteredArena = false) {
-  const perpendicular = { x: -preferred.y, y: preferred.x };
-  const candidates = [
-    preferred,
-    gameNormalizedVector(preferred.x + perpendicular.x * 0.9, preferred.y + perpendicular.y * 0.9),
-    gameNormalizedVector(preferred.x - perpendicular.x * 0.9, preferred.y - perpendicular.y * 0.9),
-    perpendicular,
-    { x: -perpendicular.x, y: -perpendicular.y },
-    gameNormalizedVector(preferred.x * 0.35 + perpendicular.x, preferred.y * 0.35 + perpendicular.y),
-    gameNormalizedVector(preferred.x * 0.35 - perpendicular.x, preferred.y * 0.35 - perpendicular.y)
-  ];
-  const step = GAME_ZOMBIE_RADIUS * 2.3;
-  return candidates
-    .filter((candidate) => candidate.x || candidate.y)
-    .map((candidate) => {
-      const x = zombie.x + candidate.x * step;
-      const y = zombie.y + candidate.y * step;
-      const bounds = gameSurvivalZombieInnerBounds();
-      const blocked = enteredArena
-        ? x < bounds.minX
-          || x > bounds.maxX
-          || y < bounds.minY
-          || y > bounds.maxY
-          || walls.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS, wall))
-        : x < -GAME_ZOMBIE_RADIUS - 20
-          || x > GAME_ARENA.width + GAME_ZOMBIE_RADIUS + 20
-          || y < -GAME_ZOMBIE_RADIUS - 20
-          || y > GAME_ARENA.height + GAME_ZOMBIE_RADIUS + 20
-          || walls.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS, wall));
-      const distance = gameDistance(x, y, focus.x, focus.y);
-      return {
-        candidate,
-        score: (mode === "flee" ? -distance : distance) + (blocked ? 10000 : 0)
-      };
-    })
-    .sort((a, b) => a.score - b.score)[0]?.candidate || preferred;
+function gameSurvivalZombieEntryTarget(zombie) {
+  if (Number.isFinite(zombie.entryX) && Number.isFinite(zombie.entryY)) return { x: zombie.entryX, y: zombie.entryY };
+  if (zombie.y < 0) return { x: gameClamp(zombie.x, GAME_SURVIVAL_X_GATE_START + GAME_SURVIVAL_GATE_PADDING, GAME_SURVIVAL_X_GATE_END - GAME_SURVIVAL_GATE_PADDING), y: GAME_SURVIVAL_ENTRY_DEPTH };
+  if (zombie.y > GAME_ARENA.height) return { x: gameClamp(zombie.x, GAME_SURVIVAL_X_GATE_START + GAME_SURVIVAL_GATE_PADDING, GAME_SURVIVAL_X_GATE_END - GAME_SURVIVAL_GATE_PADDING), y: GAME_ARENA.height - GAME_SURVIVAL_ENTRY_DEPTH };
+  if (zombie.x < 0) return { x: GAME_SURVIVAL_ENTRY_DEPTH, y: gameClamp(zombie.y, GAME_SURVIVAL_Y_GATE_START + GAME_SURVIVAL_GATE_PADDING, GAME_SURVIVAL_Y_GATE_END - GAME_SURVIVAL_GATE_PADDING) };
+  return { x: GAME_ARENA.width - GAME_SURVIVAL_ENTRY_DEPTH, y: gameClamp(zombie.y, GAME_SURVIVAL_Y_GATE_START + GAME_SURVIVAL_GATE_PADDING, GAME_SURVIVAL_Y_GATE_END - GAME_SURVIVAL_GATE_PADDING) };
+}
+
+function gameBestSurvivalZombieDirection(zombie, preferred, focus, mode, walls = GAME_WALLS) {
+  return gameBestZombieDirectionWithWalls(zombie, preferred, focus, mode, walls, gameSurvivalZombieInnerBounds());
 }
 
 function resolveSurvivalHits(player, projectiles, zombies, pepperoniPickups, solo, now = Date.now()) {
@@ -2967,7 +2993,7 @@ function gamePlayerMoveSpeed(player) {
 function moveGameZombies(zombies, players, dt, now = Date.now(), zombieDeaths = {}) {
   const normalizedZombies = applyGameZombieDeaths(normalizeGameZombies(zombies).slice(0, GAME_ZOMBIE_MAX), zombieDeaths);
   const aggroZombieIds = gameAggroZombieIds(normalizedZombies, players, now);
-  return normalizedZombies.map((zombie) => {
+  const movedZombies = normalizedZombies.map((zombie) => {
     let nextZombie = zombie;
     if (!nextZombie.alive) {
       if (now < Number(nextZombie.deadUntil || 0)) return nextZombie;
@@ -3010,16 +3036,24 @@ function moveGameZombies(zombies, players, dt, now = Date.now(), zombieDeaths = 
       || GAME_WALLS.some((wall) => gameCircleRectHit(moved.x, nextZombie.y, GAME_ZOMBIE_RADIUS, wall));
     const hitY = moved.y < GAME_ZOMBIE_RADIUS || moved.y > GAME_ARENA.height - GAME_ZOMBIE_RADIUS
       || GAME_WALLS.some((wall) => gameCircleRectHit(moved.x, moved.y, GAME_ZOMBIE_RADIUS, wall));
-    if (hitX) {
-      moved.x = nextZombie.x;
-      moved = target ? turnGameZombie({ ...moved, vx: -moved.vx }, now) : turnGameZombie(moved, now);
-    }
-    if (hitY) {
-      moved.y = nextZombie.y;
-      moved = target ? turnGameZombie({ ...moved, vy: -moved.vy }, now) : turnGameZombie(moved, now);
+    if (hitX || hitY) {
+      const focus = threat || target || { x: nextZombie.x + nextZombie.vx * 120, y: nextZombie.y + nextZombie.vy * 120 };
+      const mode = threat ? "flee" : target ? "chase" : "wander";
+      const avoid = gameBestZombieDirection(nextZombie, gameNormalizedVector(nextZombie.vx || 1, nextZombie.vy || 0), focus, mode);
+      const retry = {
+        ...nextZombie,
+        vx: avoid.x,
+        vy: avoid.y,
+        x: nextZombie.x + avoid.x * GAME_ZOMBIE_SPEED * dt,
+        y: nextZombie.y + avoid.y * GAME_ZOMBIE_SPEED * dt,
+        facing: avoid.x < -0.04 ? -1 : avoid.x > 0.04 ? 1 : nextZombie.facing || 1
+      };
+      const retryBlocked = gameZombiePositionBlocked(retry.x, retry.y, GAME_WALLS, gameStandardZombieBounds());
+      moved = retryBlocked ? turnGameZombie({ ...nextZombie, x: nextZombie.x, y: nextZombie.y }, now) : retry;
     }
     return unstickGameZombie(moved);
   });
+  return separateGameZombies(movedZombies, GAME_WALLS, gameStandardZombieBounds());
 }
 
 function normalizeGameZombies(zombies = []) {
@@ -3162,35 +3196,90 @@ function gameZombieFleeDirection(zombie, threat) {
 }
 
 function gameBestZombieDirection(zombie, preferred, focus, mode) {
-  const perpendicular = { x: -preferred.y, y: preferred.x };
-  const candidates = [
-    preferred,
-    gameNormalizedVector(preferred.x + perpendicular.x * 0.9, preferred.y + perpendicular.y * 0.9),
-    gameNormalizedVector(preferred.x - perpendicular.x * 0.9, preferred.y - perpendicular.y * 0.9),
-    perpendicular,
-    { x: -perpendicular.x, y: -perpendicular.y },
-    gameNormalizedVector(preferred.x * 0.35 + perpendicular.x, preferred.y * 0.35 + perpendicular.y),
-    gameNormalizedVector(preferred.x * 0.35 - perpendicular.x, preferred.y * 0.35 - perpendicular.y)
-  ];
+  return gameBestZombieDirectionWithWalls(zombie, preferred, focus, mode, GAME_WALLS, gameStandardZombieBounds());
+}
+
+function gameBestZombieDirectionWithWalls(zombie, preferred, focus, mode, walls = GAME_WALLS, bounds = gameStandardZombieBounds()) {
   const step = GAME_ZOMBIE_RADIUS * 2.3;
-  const ranked = candidates
+  const ranked = gameZombieDirectionCandidates(preferred)
     .filter((candidate) => candidate.x || candidate.y)
     .map((candidate) => {
       const x = zombie.x + candidate.x * step;
       const y = zombie.y + candidate.y * step;
-      const blocked = x < GAME_ZOMBIE_RADIUS
-        || x > GAME_ARENA.width - GAME_ZOMBIE_RADIUS
-        || y < GAME_ZOMBIE_RADIUS
-        || y > GAME_ARENA.height - GAME_ZOMBIE_RADIUS
-        || GAME_WALLS.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS, wall));
+      const blocked = gameZombiePositionBlocked(x, y, walls, bounds);
       const distance = gameDistance(x, y, focus.x, focus.y);
+      const sightBlocked = !blocked && mode === "chase" && gameLineBlockedByWalls(x, y, focus.x, focus.y, GAME_ZOMBIE_RADIUS + 2, walls);
+      const driftPenalty = gameDistance(candidate.x, candidate.y, preferred.x, preferred.y) * 4;
+      const baseScore = mode === "flee" ? -distance : mode === "wander" ? driftPenalty : distance;
       return {
         candidate,
-        score: (mode === "flee" ? -distance : distance) + (blocked ? 10000 : 0)
+        score: baseScore + driftPenalty + (sightBlocked ? 42 : 0) + (blocked ? 100000 : 0)
       };
     })
     .sort((a, b) => a.score - b.score);
   return ranked[0]?.candidate || preferred;
+}
+
+function gameZombieDirectionCandidates(preferred) {
+  const direction = gameNormalizedVector(preferred.x || 1, preferred.y || 0);
+  const angle = Math.atan2(direction.y, direction.x);
+  const offsets = [0, 0.35, -0.35, 0.7, -0.7, 1.1, -1.1, 1.55, -1.55, 2.1, -2.1, Math.PI];
+  return offsets.map((offset) => ({
+    x: Math.cos(angle + offset),
+    y: Math.sin(angle + offset)
+  }));
+}
+
+function gameStandardZombieBounds() {
+  return {
+    minX: GAME_ZOMBIE_RADIUS,
+    maxX: GAME_ARENA.width - GAME_ZOMBIE_RADIUS,
+    minY: GAME_ZOMBIE_RADIUS,
+    maxY: GAME_ARENA.height - GAME_ZOMBIE_RADIUS
+  };
+}
+
+function gameZombiePositionBlocked(x, y, walls = GAME_WALLS, bounds = gameStandardZombieBounds()) {
+  return x < bounds.minX
+    || x > bounds.maxX
+    || y < bounds.minY
+    || y > bounds.maxY
+    || walls.some((wall) => gameCircleRectHit(x, y, GAME_ZOMBIE_RADIUS, wall));
+}
+
+function separateGameZombies(zombies = [], walls = GAME_WALLS, bounds = gameStandardZombieBounds(), shouldSeparate = () => true) {
+  const next = zombies.map((zombie) => ({ ...zombie }));
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (let i = 0; i < next.length; i += 1) {
+      const a = next[i];
+      if (!a.alive || !shouldSeparate(a)) continue;
+      for (let j = i + 1; j < next.length; j += 1) {
+        const b = next[j];
+        if (!b.alive || !shouldSeparate(b)) continue;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distance = Math.hypot(dx, dy);
+        if (distance >= GAME_ZOMBIE_SEPARATION) continue;
+        const angle = distance > 0 ? Math.atan2(dy, dx) : (i + j + 1) * 2.399963;
+        const nx = Math.cos(angle);
+        const ny = Math.sin(angle);
+        const push = (GAME_ZOMBIE_SEPARATION - distance) / 2;
+        const ax = a.x - nx * push;
+        const ay = a.y - ny * push;
+        const bx = b.x + nx * push;
+        const by = b.y + ny * push;
+        if (!gameZombiePositionBlocked(ax, ay, walls, bounds)) {
+          a.x = ax;
+          a.y = ay;
+        }
+        if (!gameZombiePositionBlocked(bx, by, walls, bounds)) {
+          b.x = bx;
+          b.y = by;
+        }
+      }
+    }
+  }
+  return next;
 }
 
 function gameNormalizedVector(x, y) {
