@@ -950,143 +950,187 @@ label {
 
 @media (max-width: 520px) {
   .page-home {
-    padding-right: 14px;
-    padding-left: 14px;
+    height: 100dvh;
+    min-height: 100dvh;
+    grid-template-rows: 54px minmax(0, 1fr);
+    gap: 10px;
+    padding: 54px 14px 10px;
+    overflow: hidden;
   }
 
   .page-home .page-header {
-    grid-template-columns: 64px minmax(0, 1fr) 64px;
+    position: relative;
+    top: auto;
+    grid-template-columns: 54px minmax(0, 1fr) 54px;
   }
 
   .page-home .home-logo-button,
   .page-home .menu-slot,
   .page-home .menu-toggle {
-    width: 62px;
-    height: 62px;
+    width: 54px;
+    height: 54px;
+  }
+
+  .page-home .home-logo-button {
+    border-radius: 17px;
   }
 
   .page-home .menu-toggle span {
-    left: 18px;
-    width: 25px;
+    left: 16px;
+    width: 22px;
   }
 
   .page-home .menu-toggle span:nth-child(1) {
-    top: 20px;
+    top: 17px;
   }
 
   .page-home .menu-toggle span:nth-child(2),
   .page-home .app-menu.open .menu-toggle span:nth-child(1),
   .page-home .app-menu.open .menu-toggle span:nth-child(3) {
-    top: 30px;
+    top: 26px;
   }
 
   .page-home .menu-toggle span:nth-child(3) {
-    top: 40px;
+    top: 35px;
   }
 
   .page-home .family-title {
-    font-size: 1.05rem;
+    font-size: 0.98rem;
+  }
+
+  .page-home .welcome-panel {
+    min-height: 0;
+    gap: 10px;
+    overflow: hidden;
   }
 
   .home-hero-card {
-    grid-template-columns: minmax(0, 1fr) 118px;
-    gap: 8px;
-    margin-top: 36px;
-    padding: 22px;
-    border-radius: 28px;
+    grid-template-columns: minmax(0, 1fr) 100px;
+    gap: 6px;
+    margin-top: 0;
+    padding: 16px;
+    border-radius: 24px;
   }
 
   .home-hero-copy,
   .home-hero-art {
-    min-height: 215px;
+    min-height: 164px;
   }
 
   .home-welcome-title {
-    font-size: 2.25rem;
+    gap: 1px;
+    font-size: 1.75rem;
+    line-height: 0.98;
   }
 
   .home-hero-logo {
-    right: -28px;
-    top: 54px;
-    width: 178px;
+    right: -18px;
+    top: 46px;
+    width: 138px;
   }
 
   .home-popcorn {
-    left: -4px;
-    bottom: 30px;
-    transform: scale(0.84);
+    display: none;
   }
 
   .home-film-reel {
-    right: -14px;
-    bottom: 12px;
-    transform: scale(0.82);
+    display: none;
+  }
+
+  .home-sparkle-one {
+    left: 54%;
+    top: 24%;
+    width: 13px;
+    height: 13px;
+  }
+
+  .home-sparkle-two {
+    display: none;
   }
 
   .home-wheel-action {
-    grid-template-columns: 58px 1px minmax(0, 1fr);
-    gap: 12px;
-    min-height: 72px;
-    padding: 8px 18px;
-    font-size: 1.32rem;
+    grid-template-columns: 42px 1px minmax(0, 1fr);
+    gap: 10px;
+    min-height: 56px;
+    padding: 6px 14px;
+    box-shadow: 0 7px 0 #b66a27, 0 14px 20px rgba(86, 28, 23, 0.18);
+    font-size: 1.05rem;
+  }
+
+  .home-wheel-action::before {
+    height: 32px;
   }
 
   .home-action-icon {
-    width: 50px;
-    height: 50px;
+    width: 38px;
+    height: 38px;
   }
 
   .home-card-grid {
-    gap: 12px;
+    gap: 9px;
+    margin-top: 10px;
   }
 
   .home-nav-card {
-    grid-template-columns: 48px minmax(0, 1fr) 10px;
+    grid-template-columns: 42px minmax(0, 1fr) 9px;
     gap: 7px;
-    min-height: 104px;
-    padding: 10px;
-    border-radius: 18px;
+    min-height: 82px;
+    padding: 8px;
+    border-radius: 16px;
   }
 
   .home-icon-bubble {
-    width: 48px;
-    height: 48px;
+    width: 42px;
+    height: 42px;
   }
 
   .home-card-icon {
-    width: 39px;
-    height: 39px;
+    width: 34px;
+    height: 34px;
   }
 
   .home-nav-card strong {
-    font-size: 0.93rem;
+    font-size: 0.83rem;
+    line-height: 1.02;
   }
 
   .home-nav-card small {
-    font-size: 0.72rem;
+    margin-top: 4px;
+    font-size: 0.66rem;
+    line-height: 1.12;
   }
 
   .home-card-arrow {
-    font-size: 1.6rem;
+    font-size: 1.25rem;
   }
 
   .home-footer-art {
-    grid-template-columns: 70px minmax(0, 1fr) 86px;
-  }
-
-  .home-footer-art p {
-    font-size: 1.35rem;
-  }
-
-  .home-popcorn-bowl {
-    transform: scale(0.82);
-    transform-origin: bottom right;
+    display: none;
   }
 }
 
 @media (max-width: 360px) {
   .home-card-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .home-nav-card {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+
+  .home-icon-bubble {
+    width: 38px;
+    height: 38px;
+  }
+
+  .home-card-icon {
+    width: 31px;
+    height: 31px;
+  }
+
+  .home-card-arrow {
+    display: none;
   }
 }
 
