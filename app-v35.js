@@ -425,12 +425,206 @@ function renderHomePage() {
   appRoot.replaceChildren(templates.home.content.cloneNode(true));
   renderAppMenu();
   const name = currentUser?.displayName || readSession()?.name || "friend";
-  document.querySelector("#welcome-title").textContent = `Welcome ${name} to the home of pizza movie night`;
+  document.querySelector("#welcome-name").textContent = name;
+  document.querySelector("#welcome-title").setAttribute("aria-label", `Welcome ${name} to the home of pizza movie night`);
+  drawHomeIcons();
   document.querySelector("#go-wheel-button").addEventListener("click", () => navigate("wheel"));
   document.querySelector("#go-list-button").addEventListener("click", () => navigate("movie-list"));
   document.querySelector("#go-search-button").addEventListener("click", () => navigate("search"));
   document.querySelector("#go-rankings-button").addEventListener("click", () => navigate("rankings"));
   document.querySelector("#go-game-button").addEventListener("click", () => navigate("game"));
+}
+
+function drawHomeIcons() {
+  document.querySelectorAll("[data-home-icon]").forEach((canvas) => {
+    const ctx = canvas.getContext("2d");
+    const size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.scale(size / 72, size / 72);
+    const type = canvas.dataset.homeIcon;
+    if (type === "wheel") drawHomeWheelIcon(ctx);
+    else if (type === "list") drawHomeClapperIcon(ctx);
+    else if (type === "search") drawHomeSearchIcon(ctx);
+    else if (type === "rankings") drawHomeRankingsIcon(ctx);
+    else if (type === "arena") drawHomeArenaIcon(ctx);
+    ctx.restore();
+  });
+}
+
+function drawHomeWheelIcon(ctx) {
+  ctx.save();
+  ctx.translate(36, 38);
+  ctx.fillStyle = "#ffcb5c";
+  ctx.strokeStyle = "#421f31";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(0, 0, 24, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  const slices = ["#ffe486", "#ffc84d", "#ffb246", "#ffe486", "#ffc84d", "#ffb246"];
+  for (let index = 0; index < 6; index += 1) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.fillStyle = slices[index];
+    ctx.arc(0, 0, 20, index * Math.PI / 3, (index + 1) * Math.PI / 3);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = "#e94c3d";
+  [[-10, -6], [8, -10], [13, 7], [-6, 11]].forEach(([x, y]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = "#421f31";
+  ctx.beginPath();
+  ctx.arc(0, 0, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = "#f8efe0";
+  ctx.beginPath();
+  ctx.moveTo(36, 2);
+  ctx.lineTo(27, 17);
+  ctx.lineTo(45, 17);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHomeClapperIcon(ctx) {
+  ctx.fillStyle = "#371b35";
+  drawHomeRoundRect(ctx, 18, 26, 38, 30, 4);
+  ctx.fill();
+  ctx.strokeStyle = "#fff4df";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(18, 26, 38, 30);
+  ctx.save();
+  ctx.translate(15, 21);
+  ctx.rotate(-0.16);
+  ctx.fillStyle = "#fff4df";
+  drawHomeRoundRect(ctx, 0, 0, 42, 10, 2);
+  ctx.fill();
+  ctx.fillStyle = "#371b35";
+  for (let x = 3; x < 39; x += 12) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x + 7, 0);
+    ctx.lineTo(x + 3, 10);
+    ctx.lineTo(x - 4, 10);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.strokeStyle = "#f6bd60";
+  ctx.lineWidth = 2;
+  [36, 45].forEach((y) => {
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(48, y);
+    ctx.stroke();
+  });
+}
+
+function drawHomeSearchIcon(ctx) {
+  ctx.fillStyle = "#fff7ea";
+  drawHomeRoundRect(ctx, 18, 15, 34, 40, 4);
+  ctx.fill();
+  ctx.strokeStyle = "#421f31";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(18, 15, 34, 40);
+  ctx.fillStyle = "#421f31";
+  for (let y = 20; y < 51; y += 9) {
+    ctx.fillRect(21, y, 4, 4);
+    ctx.fillRect(45, y, 4, 4);
+  }
+  ctx.strokeStyle = "#6d4cc2";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(39, 38, 12, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(48, 47);
+  ctx.lineTo(60, 59);
+  ctx.stroke();
+}
+
+function drawHomeRankingsIcon(ctx) {
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath();
+  ctx.moveTo(36, 8);
+  ctx.lineTo(39, 17);
+  ctx.lineTo(48, 17);
+  ctx.lineTo(41, 22);
+  ctx.lineTo(44, 31);
+  ctx.lineTo(36, 25);
+  ctx.lineTo(28, 31);
+  ctx.lineTo(31, 22);
+  ctx.lineTo(24, 17);
+  ctx.lineTo(33, 17);
+  ctx.closePath();
+  ctx.fill();
+  const bars = [
+    [18, 38, 14, 18, "#fff4df"],
+    [32, 29, 16, 27, "#ffc857"],
+    [48, 42, 14, 14, "#ff704f"]
+  ];
+  bars.forEach(([x, y, w, h, color], index) => {
+    ctx.fillStyle = color;
+    drawHomeRoundRect(ctx, x, y, w, h, 3);
+    ctx.fill();
+    ctx.fillStyle = "#421f31";
+    ctx.font = "900 10px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(index === 0 ? 2 : index === 1 ? 1 : 3), x + w / 2, y + 9);
+  });
+}
+
+function drawHomeArenaIcon(ctx) {
+  ctx.fillStyle = "#d88a3d";
+  drawHomeRoundRect(ctx, 14, 30, 44, 28, 4);
+  ctx.fill();
+  ctx.fillStyle = "#421f31";
+  ctx.beginPath();
+  ctx.arc(36, 58, 24, Math.PI, Math.PI * 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#ffb347";
+  ctx.beginPath();
+  ctx.moveTo(36, 50);
+  ctx.bezierCurveTo(25, 42, 30, 32, 34, 27);
+  ctx.bezierCurveTo(35, 36, 48, 39, 40, 50);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#ff4d3f";
+  ctx.beginPath();
+  ctx.moveTo(36, 51);
+  ctx.bezierCurveTo(31, 46, 34, 39, 37, 36);
+  ctx.bezierCurveTo(39, 42, 44, 44, 39, 51);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#f6bd60";
+  ctx.lineWidth = 2;
+  for (let x = 18; x <= 54; x += 9) {
+    ctx.beginPath();
+    ctx.moveTo(x, 32);
+    ctx.lineTo(x, 55);
+    ctx.stroke();
+  }
+}
+
+function drawHomeRoundRect(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function renderWheelPage() {
@@ -678,7 +872,7 @@ function renderSearchResults(movies) {
     const reviewLinks = movieReviewLinks(movie);
     const recommendation = recommendationForMovie(movie);
     item.innerHTML = `
-      ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder"><img src="icon.svg" alt="" loading="lazy" /></div>`}
+      ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
       <div class="search-card-body">
         <div>
           <h3>${escapeHtml(movie.Title)}</h3>
@@ -750,7 +944,7 @@ function renderMovieDetailPage() {
   container.innerHTML = `
     <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
     <article class="movie-detail-card">
-      ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="icon.svg" alt="" loading="lazy" /></div>`}
+      ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
       <div class="movie-detail-body">
         <p class="eyebrow">${escapeHtml([movie.year, movie.rated, movie.runtime].filter(isRealValue).join(" • "))}</p>
         <h1 class="page-title">${escapeHtml(movie.title)}</h1>
@@ -5147,7 +5341,7 @@ function renderAppMenu() {
     if (!header.querySelector(".home-logo-button")) {
       header.insertAdjacentHTML("afterbegin", `
         <button class="home-logo-button" type="button" aria-label="Go home">
-          <img src="icon.svg" alt="" />
+          <img src="assets/pizza-logo.png" alt="" />
         </button>
       `);
       header.querySelector(".home-logo-button").addEventListener("click", () => navigate("home"));
