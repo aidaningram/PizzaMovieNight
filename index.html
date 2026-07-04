@@ -3,19 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#fff3dd" />
+    <meta name="theme-color" content="#111019" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Pizza</title>
-    <link rel="icon" type="image/png" href="assets/icon-192.png" />
-    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div id="app" class="app-shell">
       <section class="loading-view" aria-live="polite">
-        <div class="brand-mark"><img class="brand-logo" src="assets/pizza-logo.png" alt="" /></div>
+        <div class="brand-mark"><img class="brand-logo" src="icon.svg" alt="" /></div>
         <h1>Pizza</h1>
         <p>Loading...</p>
       </section>
@@ -24,7 +22,7 @@
     <template id="login-template">
       <main class="login-screen">
         <section class="login-copy">
-          <div class="brand-mark"><img class="brand-logo" src="assets/pizza-logo.png" alt="" /></div>
+          <div class="brand-mark"><img class="brand-logo" src="icon.svg" alt="" /></div>
           <h1>Pizza</h1>
           <p>The family wheel lives here.</p>
         </section>
@@ -69,58 +67,14 @@
         </header>
 
         <section class="welcome-panel">
-          <section class="home-hero-card">
-            <div class="home-sparkle home-sparkle-one" aria-hidden="true"></div>
-            <div class="home-sparkle home-sparkle-two" aria-hidden="true"></div>
-            <div class="home-hero-copy">
-              <h1 id="welcome-title" class="home-welcome-title">
-                <span>Welcome</span>
-                <span id="welcome-name" class="home-welcome-name"></span>
-                <span>to the home of</span>
-                <span>pizza movie night</span>
-              </h1>
-            </div>
-            <div class="home-hero-art" aria-hidden="true">
-              <div class="home-popcorn">
-                <span></span><span></span><span></span><span></span><span></span><span></span>
-              </div>
-              <img class="home-hero-logo" src="assets/pizza-logo.png" alt="" />
-              <div class="home-film-reel"><span></span><span></span><span></span></div>
-            </div>
-            <button id="go-wheel-button" class="home-wheel-action" type="button">
-              <canvas class="home-action-icon" width="64" height="64" data-home-icon="wheel" aria-hidden="true"></canvas>
-              <span>Go to wheel</span>
-            </button>
-          </section>
-
-          <section class="home-card-grid" aria-label="Pizza sections">
-            <button id="go-list-button" class="home-nav-card" type="button">
-              <span class="home-icon-bubble home-icon-red"><canvas class="home-card-icon" width="72" height="72" data-home-icon="list" aria-hidden="true"></canvas></span>
-              <span><strong>Movie List</strong><small>Save future picks</small></span>
-              <span class="home-card-arrow" aria-hidden="true">›</span>
-            </button>
-            <button id="go-search-button" class="home-nav-card" type="button">
-              <span class="home-icon-bubble home-icon-gold"><canvas class="home-card-icon" width="72" height="72" data-home-icon="search" aria-hidden="true"></canvas></span>
-              <span><strong>Find Movies</strong><small>Search new ideas</small></span>
-              <span class="home-card-arrow" aria-hidden="true">›</span>
-            </button>
-            <button id="go-rankings-button" class="home-nav-card" type="button">
-              <span class="home-icon-bubble home-icon-plum"><canvas class="home-card-icon" width="72" height="72" data-home-icon="rankings" aria-hidden="true"></canvas></span>
-              <span><strong>Rankings</strong><small>Rate past picks</small></span>
-              <span class="home-card-arrow" aria-hidden="true">›</span>
-            </button>
-            <button id="go-game-button" class="home-nav-card" type="button">
-              <span class="home-icon-bubble home-icon-coral"><canvas class="home-card-icon" width="72" height="72" data-home-icon="arena" aria-hidden="true"></canvas></span>
-              <span><strong>Pizza Arena</strong><small>Play mini games</small></span>
-              <span class="home-card-arrow" aria-hidden="true">›</span>
-            </button>
-          </section>
-
-          <section class="home-footer-art" aria-hidden="true">
-            <div class="home-soda"></div>
-            <p>Grab a slice.<br />Press play.</p>
-            <div class="home-popcorn-bowl"><span></span><span></span><span></span><span></span><span></span></div>
-          </section>
+          <h1 id="welcome-title"></h1>
+          <div class="home-actions">
+            <button id="go-wheel-button" class="primary-action" type="button">Go to wheel</button>
+            <button id="go-list-button" class="secondary-action" type="button">Movie List</button>
+            <button id="go-search-button" class="secondary-action" type="button">Find Movies</button>
+            <button id="go-rankings-button" class="secondary-action" type="button">Rankings</button>
+            <button id="go-game-button" class="secondary-action" type="button">Pizza Arena</button>
+          </div>
         </section>
       </main>
     </template>
