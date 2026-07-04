@@ -574,11 +574,6 @@ label {
   grid-template-columns: 72px minmax(0, 1fr) 72px;
   top: max(12px, env(safe-area-inset-top));
   gap: 10px;
-  z-index: 10;
-}
-
-.page-home .welcome-panel {
-  z-index: 2;
 }
 
 .page-home .family-title {
@@ -991,7 +986,7 @@ label {
   .home-hero-card {
     grid-template-columns: minmax(0, 1fr) 118px;
     gap: 8px;
-    margin-top: 36px;
+    margin-top: 20px;
     padding: 22px;
     border-radius: 28px;
   }
@@ -1041,33 +1036,33 @@ label {
   }
 
   .home-nav-card {
-    grid-template-columns: 48px minmax(0, 1fr) 10px;
-    gap: 7px;
+    grid-template-columns: 56px minmax(0, 1fr) 12px;
+    gap: 9px;
     min-height: 104px;
     padding: 10px;
     border-radius: 18px;
   }
 
   .home-icon-bubble {
-    width: 48px;
-    height: 48px;
+    width: 54px;
+    height: 54px;
   }
 
   .home-card-icon {
-    width: 39px;
-    height: 39px;
+    width: 44px;
+    height: 44px;
   }
 
   .home-nav-card strong {
-    font-size: 0.93rem;
+    font-size: 0.98rem;
   }
 
   .home-nav-card small {
-    font-size: 0.72rem;
+    font-size: 0.78rem;
   }
 
   .home-card-arrow {
-    font-size: 1.6rem;
+    font-size: 1.8rem;
   }
 
   .home-footer-art {
