@@ -3,13 +3,13 @@
   "short_name": "Pizza",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#111019",
-  "theme_color": "#111019",
+  "background_color": "#fff7e7",
+  "theme_color": "#fff7e7",
   "icons": [
     {
-      "src": "icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "assets/pizza-logo.png",
+      "sizes": "2380x2380",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

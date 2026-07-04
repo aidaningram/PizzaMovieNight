@@ -3,17 +3,20 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#111019" />
+    <meta name="theme-color" content="#fff7e7" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Pizza</title>
     <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div id="app" class="app-shell">
       <section class="loading-view" aria-live="polite">
-        <div class="brand-mark"><img class="brand-logo" src="icon.svg" alt="" /></div>
+        <div class="brand-mark"><img class="brand-logo" src="assets/pizza-logo.png" alt="" /></div>
         <h1>Pizza</h1>
         <p>Loading...</p>
       </section>
@@ -22,7 +25,7 @@
     <template id="login-template">
       <main class="login-screen">
         <section class="login-copy">
-          <div class="brand-mark"><img class="brand-logo" src="icon.svg" alt="" /></div>
+          <div class="brand-mark"><img class="brand-logo" src="assets/pizza-logo.png" alt="" /></div>
           <h1>Pizza</h1>
           <p>The family wheel lives here.</p>
         </section>
@@ -67,14 +70,22 @@
         </header>
 
         <section class="welcome-panel">
-          <h1 id="welcome-title"></h1>
-          <div class="home-actions">
-            <button id="go-wheel-button" class="primary-action" type="button">Go to wheel</button>
-            <button id="go-list-button" class="secondary-action" type="button">Movie List</button>
-            <button id="go-search-button" class="secondary-action" type="button">Find Movies</button>
-            <button id="go-rankings-button" class="secondary-action" type="button">Rankings</button>
-            <button id="go-game-button" class="secondary-action" type="button">Pizza Arena</button>
+          <div class="home-hero-copy">
+            <h1 id="welcome-title"></h1>
+            <div class="home-hero-art" aria-hidden="true">
+              <img src="assets/pizza-logo.png" alt="" />
+              <div class="popcorn-bucket"></div>
+              <div class="film-reel"></div>
+            </div>
           </div>
+          <div class="home-actions">
+            <button id="go-wheel-button" class="primary-action home-wheel-action" type="button"><span class="wheel-mini" aria-hidden="true"></span><span>Go to wheel</span></button>
+            <button id="go-list-button" class="secondary-action home-card-action" type="button"><span class="home-card-icon movie-list-icon" aria-hidden="true"></span><span><strong>Movie List</strong><small>See our saved movies</small></span></button>
+            <button id="go-search-button" class="secondary-action home-card-action" type="button"><span class="home-card-icon find-icon" aria-hidden="true"></span><span><strong>Find Movies</strong><small>Discover the perfect pick</small></span></button>
+            <button id="go-rankings-button" class="secondary-action home-card-action" type="button"><span class="home-card-icon rankings-icon" aria-hidden="true"></span><span><strong>Rankings</strong><small>See family favorites</small></span></button>
+            <button id="go-game-button" class="secondary-action home-card-action" type="button"><span class="home-card-icon arena-icon" aria-hidden="true"></span><span><strong>Pizza Arena</strong><small>Fun challenges & mini games</small></span></button>
+          </div>
+          <p class="home-tagline">Grab a slice. Press play.</p>
         </section>
       </main>
     </template>
@@ -258,6 +269,61 @@
         </section>
 
         <section id="members-list" class="movie-list"></section>
+      </main>
+    </template>
+
+    <template id="design-system-template">
+      <main class="design-system-page">
+        <header class="design-system-hero">
+          <img src="assets/pizza-logo.png" alt="Pizza logo" />
+          <div>
+            <p class="eyebrow">Private brand guide</p>
+            <h1>Pizza Design System</h1>
+            <p>This hidden page documents the colors, type, logo usage, and reusable UI pieces for the Pizza app.</p>
+          </div>
+        </header>
+
+        <section class="design-section">
+          <h2>Logo</h2>
+          <div class="logo-spec-grid">
+            <div class="logo-tile dark"><img src="assets/pizza-logo.png" alt="" /></div>
+            <div class="logo-tile light"><img src="assets/pizza-logo.png" alt="" /></div>
+            <div class="spec-copy">
+              <p><strong>Primary mark:</strong> illustrated pizza slice on deep plum or warm cream surfaces.</p>
+              <p><strong>App icon:</strong> pizza slice inside a rounded plum square with a soft warm shadow.</p>
+              <p><strong>Minimum size:</strong> 44px in app chrome, 64px for brand moments.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="design-section">
+          <h2>Colors</h2>
+          <div class="swatch-grid">
+            <div class="swatch" style="--swatch:#fff7e7"><span></span><strong>Warm Cream</strong><code>#fff7e7</code></div>
+            <div class="swatch" style="--swatch:#341735"><span></span><strong>Plum Ink</strong><code>#341735</code></div>
+            <div class="swatch" style="--swatch:#ef463e"><span></span><strong>Sauce Red</strong><code>#ef463e</code></div>
+            <div class="swatch" style="--swatch:#ffc94d"><span></span><strong>Cheese Gold</strong><code>#ffc94d</code></div>
+            <div class="swatch" style="--swatch:#ff8b4d"><span></span><strong>Crust Orange</strong><code>#ff8b4d</code></div>
+            <div class="swatch" style="--swatch:#f7e8c9"><span></span><strong>Dough Card</strong><code>#f7e8c9</code></div>
+          </div>
+        </section>
+
+        <section class="design-section">
+          <h2>Typography</h2>
+          <div class="type-grid">
+            <div><p class="type-display">Baloo 2</p><p>Used for headlines, buttons, navigation, and playful emphasis.</p></div>
+            <div><p class="type-body">Nunito</p><p>Used for body copy, helper text, labels, and form content.</p></div>
+          </div>
+        </section>
+
+        <section class="design-section">
+          <h2>Components</h2>
+          <div class="component-grid">
+            <button class="primary-action" type="button">Primary Button</button>
+            <button class="secondary-action" type="button">Secondary Button</button>
+            <div class="panel form-stack"><p class="eyebrow">Panel</p><h3>Simple content card</h3><p class="helper-text">Warm cards, plum text, soft shadows, and rounded corners.</p></div>
+          </div>
+        </section>
       </main>
     </template>
 

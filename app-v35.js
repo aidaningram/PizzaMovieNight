@@ -15,9 +15,10 @@ const templates = {
   movieDetail: document.querySelector("#movie-detail-template"),
   rankings: document.querySelector("#rankings-template"),
   members: document.querySelector("#members-template"),
+  designSystem: document.querySelector("#design-system-template"),
   game: document.querySelector("#game-template")
 };
-const colors = ["#e85d75", "#f4a261", "#2a9d8f", "#457b9d", "#b8c0ff", "#f2cc8f", "#81b29a", "#c77dff"];
+const colors = ["#ef463e", "#ffc94d", "#ff8b4d", "#fff0a6", "#f7b267", "#d83c35", "#f7e8c9", "#341735"];
 const sessionKey = "pizzaMovieSession";
 const dismissedRankingsKey = "pizzaMovieDismissedRankings";
 const selectedMovieKey = "pizzaMovieSelectedMovie";
@@ -215,6 +216,11 @@ async function start() {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
 
+  if (routeName() === "design-system") {
+    renderDesignSystemPage();
+    return;
+  }
+
   if (FIREBASE_READY) {
     await initFirebase();
     return;
@@ -400,6 +406,11 @@ function renderLogin(message = "") {
 }
 
 function renderRoute() {
+  if (routeName() === "design-system") {
+    cleanupGame();
+    renderDesignSystemPage();
+    return;
+  }
   if (!readSession()) {
     renderLogin();
     return;
@@ -415,6 +426,7 @@ function renderRoute() {
   else if (route === "movie-detail") renderMovieDetailPage();
   else if (route === "rankings") renderRankingsPage();
   else if (route === "members") renderMembersPage();
+  else if (route === "design-system") renderDesignSystemPage();
   else if (route === "game") renderGamePage();
   else renderHomePage();
   resetViewportPosition();
@@ -425,12 +437,17 @@ function renderHomePage() {
   appRoot.replaceChildren(templates.home.content.cloneNode(true));
   renderAppMenu();
   const name = currentUser?.displayName || readSession()?.name || "friend";
-  document.querySelector("#welcome-title").textContent = `Welcome ${name} to the home of pizza movie night`;
+  document.querySelector("#welcome-title").innerHTML = `Welcome <span>${escapeHtml(name)}</span> to the home of pizza movie night`;
   document.querySelector("#go-wheel-button").addEventListener("click", () => navigate("wheel"));
   document.querySelector("#go-list-button").addEventListener("click", () => navigate("movie-list"));
   document.querySelector("#go-search-button").addEventListener("click", () => navigate("search"));
   document.querySelector("#go-rankings-button").addEventListener("click", () => navigate("rankings"));
   document.querySelector("#go-game-button").addEventListener("click", () => navigate("game"));
+}
+
+function renderDesignSystemPage() {
+  appRoot.replaceChildren(templates.designSystem.content.cloneNode(true));
+  resetViewportPosition();
 }
 
 function renderWheelPage() {
@@ -678,7 +695,7 @@ function renderSearchResults(movies) {
     const reviewLinks = movieReviewLinks(movie);
     const recommendation = recommendationForMovie(movie);
     item.innerHTML = `
-      ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder"><img src="icon.svg" alt="" loading="lazy" /></div>`}
+      ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
       <div class="search-card-body">
         <div>
           <h3>${escapeHtml(movie.Title)}</h3>
@@ -750,7 +767,7 @@ function renderMovieDetailPage() {
   container.innerHTML = `
     <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
     <article class="movie-detail-card">
-      ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="icon.svg" alt="" loading="lazy" /></div>`}
+      ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
       <div class="movie-detail-body">
         <p class="eyebrow">${escapeHtml([movie.year, movie.rated, movie.runtime].filter(isRealValue).join(" • "))}</p>
         <h1 class="page-title">${escapeHtml(movie.title)}</h1>
@@ -5147,7 +5164,7 @@ function renderAppMenu() {
     if (!header.querySelector(".home-logo-button")) {
       header.insertAdjacentHTML("afterbegin", `
         <button class="home-logo-button" type="button" aria-label="Go home">
-          <img src="icon.svg" alt="" />
+          <img src="assets/pizza-logo.png" alt="" />
         </button>
       `);
       header.querySelector(".home-logo-button").addEventListener("click", () => navigate("home"));
