@@ -3490,7 +3490,7 @@ function drawGame() {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
-  ctx.fillStyle = "#15131f";
+  ctx.fillStyle = "#fff0d2";
   ctx.fillRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
   drawGameGrid(ctx);
   gameState.walls.forEach((wall) => drawGameWall(ctx, wall));
@@ -3540,15 +3540,15 @@ function gameSurvivalOverlayText(solo = {}, now = Date.now()) {
 function drawGameCountdownOverlay(ctx, text) {
   if (!text) return;
   ctx.save();
-  ctx.fillStyle = "rgba(17, 16, 25, 0.24)";
+  ctx.fillStyle = "rgba(52, 23, 53, 0.18)";
   ctx.fillRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
   ctx.font = "950 150px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = 12;
-  ctx.strokeStyle = "rgba(17, 16, 25, 0.72)";
+  ctx.strokeStyle = "rgba(52, 23, 53, 0.68)";
   ctx.fillStyle = "#fff7ea";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowColor = "rgba(52, 23, 53, 0.38)";
   ctx.shadowBlur = 18;
   ctx.strokeText(text, GAME_ARENA.width / 2, GAME_ARENA.height / 2);
   ctx.fillText(text, GAME_ARENA.width / 2, GAME_ARENA.height / 2);
@@ -3733,7 +3733,7 @@ function padGameScoreRows(rows = [], count = 5) {
 }
 
 function drawGameGrid(ctx) {
-  ctx.strokeStyle = "rgba(255, 244, 223, 0.05)";
+  ctx.strokeStyle = "rgba(52, 23, 53, 0.08)";
   ctx.lineWidth = 1;
   for (let x = 0; x <= GAME_ARENA.width; x += 48) {
     ctx.beginPath();
@@ -3750,8 +3750,8 @@ function drawGameGrid(ctx) {
 }
 
 function drawGameWall(ctx, wall) {
-  ctx.fillStyle = "#4e4762";
-  ctx.strokeStyle = "#9387b4";
+  ctx.fillStyle = "#f5d79f";
+  ctx.strokeStyle = "#c8874a";
   ctx.lineWidth = 3;
   gameRoundRect(ctx, wall.x, wall.y, wall.w, wall.h, 8);
   ctx.fill();
