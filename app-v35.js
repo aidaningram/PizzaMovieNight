@@ -3985,11 +3985,7 @@ function drawGamePlayer(ctx, player) {
     ctx.fillText((player.name || "?").slice(0, 1).toUpperCase(), 0, 1);
     drawGameShieldIcon(ctx, player, now);
     ctx.restore();
-    ctx.fillStyle = "#fff4df";
-    ctx.font = "900 16px system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(player.name || "Player", player.x, player.y - GAME_MEATBALL_SIZE / 2 - 10);
+    drawGamePlayerLabel(ctx, player.name || "Player", player.x, player.y - GAME_MEATBALL_SIZE / 2 - 10);
     return;
   }
   ctx.rotate(facingAngle);
@@ -4066,11 +4062,20 @@ function drawGamePlayer(ctx, player) {
   drawGameShieldIcon(ctx, player, now);
   ctx.restore();
 
-  ctx.fillStyle = "#fff4df";
-  ctx.font = "900 16px system-ui";
+  drawGamePlayerLabel(ctx, player.name || "Player", player.x, player.y - radius - 10);
+  ctx.restore();
+}
+
+function drawGamePlayerLabel(ctx, text, x, y) {
+  ctx.save();
+  ctx.font = "950 16px system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(player.name || "Player", player.x, player.y - radius - 10);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = "rgba(255, 250, 240, 0.96)";
+  ctx.fillStyle = "#341735";
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
   ctx.restore();
 }
 
