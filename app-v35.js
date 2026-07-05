@@ -299,6 +299,7 @@ async function enterFamilySpace(session) {
 }
 
 function renderLogin(message = "") {
+  setHomeScreenActive(false);
   cleanupGame();
   cleanupFamilyListener();
   lastFamilyRenderSignature = "";
@@ -408,16 +409,19 @@ function renderLogin(message = "") {
 function renderRoute() {
   if (routeName() === "design-system") {
     cleanupGame();
+    setHomeScreenActive(false);
     renderDesignSystemPage();
     return;
   }
   if (!readSession()) {
+    setHomeScreenActive(false);
     renderLogin();
     return;
   }
   if (!familyData) return;
 
   const route = routeName();
+  setHomeScreenActive(route === "home");
   if (route !== "game") cleanupGame();
   if (route === "wheel") renderWheelPage();
   else if (route === "add") renderAddPage();
@@ -4346,6 +4350,11 @@ function resetLocalGameRuntime() {
 
 function preventGamePageDrag(event) {
   if (document.body.classList.contains("game-active")) event.preventDefault();
+}
+
+function setHomeScreenActive(active) {
+  document.documentElement.classList.toggle("home-active-root", active);
+  document.body.classList.toggle("home-active", active);
 }
 
 function cleanupGameArenaListener() {

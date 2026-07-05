@@ -64,6 +64,35 @@ body {
   color: var(--ink);
 }
 
+html.home-active-root {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  background-color: #fff0d2;
+}
+
+body.home-active {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  background-color: #fff0d2;
+}
+
+body.home-active::before {
+  content: "";
+  position: fixed;
+  inset: -28px;
+  z-index: -1;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
+    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
+    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
+    #fff0d2;
+}
+
 html.game-active-root {
   height: 100dvh;
   overflow: hidden;
@@ -179,6 +208,19 @@ h3 {
     var(--bg);
 }
 
+body.home-active .app-shell {
+  position: fixed;
+  inset: 0;
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
+    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
+    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
+    #fff0d2;
+}
+
 .loading-view,
 .login-screen,
 .page {
@@ -206,11 +248,12 @@ h3 {
 
 .page-home {
   position: fixed;
-  inset: 0;
+  top: 0;
+  bottom: 0;
   width: min(100%, 720px);
-  height: 100dvh;
-  min-height: 100dvh;
-  max-height: 100dvh;
+  height: auto;
+  min-height: 0;
+  max-height: none;
   align-content: stretch;
   grid-template-rows: auto minmax(0, auto) minmax(0, 1fr);
   gap: clamp(8px, 1.5dvh, 16px);
@@ -2229,23 +2272,8 @@ body.game-playing .game-page .page-header {
     font-size: clamp(1.9rem, 9.3vw, 3rem);
   }
 
-  .home-hero-art {
-    min-height: 132px;
-  }
-
-  .home-hero-art img {
-    right: -24%;
+  .home-hero-image {
     width: min(62vw, 205px);
-  }
-
-  .popcorn-bucket {
-    width: 50px;
-    height: 58px;
-  }
-
-  .film-reel {
-    width: 46px;
-    height: 46px;
   }
 
   .home-card-action {
@@ -2275,10 +2303,6 @@ body.game-playing .game-page .page-header {
 
   .home-hero-copy h1 {
     font-size: clamp(1.75rem, 8.6vw, 2.65rem);
-  }
-
-  .home-hero-art {
-    min-height: 112px;
   }
 
   .home-wheel-action {
