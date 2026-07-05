@@ -652,6 +652,7 @@ label {
 
 .home-feature-section {
   display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: clamp(8px, 1.2dvh, 12px);
   min-height: 0;
 }
@@ -659,6 +660,9 @@ label {
 .page-home .home-actions {
   z-index: 1;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-self: stretch;
+  height: 100%;
   gap: clamp(8px, 1.25dvh, 12px);
   margin: 0;
 }
@@ -712,7 +716,8 @@ label {
   grid-template-columns: clamp(48px, 13vw, 70px) minmax(0, 1fr) 16px;
   align-items: center;
   gap: clamp(8px, 2vw, 12px);
-  min-height: clamp(78px, 12dvh, 108px);
+  min-height: 0;
+  height: 100%;
   padding: clamp(8px, 2.2vw, 14px);
   border: 0;
   border-radius: 18px;
@@ -2348,4 +2353,18 @@ body.game-playing .game-page .page-header {
   .design-system-hero img {
     justify-self: center;
   }
+}
+
+.page-home .home-feature-section {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.page-home .home-actions {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  height: 100%;
+}
+
+.page-home .home-card-action {
+  min-height: 0;
+  height: 100%;
 }
