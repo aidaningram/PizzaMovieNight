@@ -597,57 +597,14 @@ label {
   font-size: 1.28em;
 }
 
-.home-hero-art {
-  position: relative;
-  align-self: stretch;
-  min-height: 150px;
-}
-
-.home-hero-art img {
-  position: absolute;
-  right: -10%;
-  bottom: 6%;
-  z-index: 2;
+.home-hero-image {
+  justify-self: end;
+  align-self: end;
   width: min(56vw, 255px);
-  max-height: 86%;
+  max-height: 100%;
   object-fit: contain;
-  filter: drop-shadow(0 12px 12px rgba(75, 26, 17, 0.24));
-  transform: rotate(-7deg);
-}
-
-.popcorn-bucket,
-.film-reel {
-  position: absolute;
-  border-radius: 18px;
-  background: rgba(255, 250, 240, 0.9);
-  box-shadow: 0 10px 0 rgba(109, 37, 24, 0.12);
-}
-
-.popcorn-bucket {
-  left: 2%;
-  bottom: 6%;
-  width: 64px;
-  height: 72px;
-  background:
-    radial-gradient(circle at 16px 3px, #fff7d7 0 8px, transparent 9px),
-    radial-gradient(circle at 30px 2px, #fff7d7 0 9px, transparent 10px),
-    radial-gradient(circle at 45px 5px, #fff7d7 0 8px, transparent 9px),
-    repeating-linear-gradient(90deg, #fff6df 0 13px, #e94d43 13px 24px);
-}
-
-.film-reel {
-  right: 8%;
-  bottom: 0;
-  width: 60px;
-  height: 60px;
-  border-radius: 999px;
-  background:
-    radial-gradient(circle, var(--plum) 0 8px, transparent 9px),
-    radial-gradient(circle at 50% 20%, #6d5570 0 7px, transparent 8px),
-    radial-gradient(circle at 78% 50%, #6d5570 0 7px, transparent 8px),
-    radial-gradient(circle at 50% 78%, #6d5570 0 7px, transparent 8px),
-    radial-gradient(circle at 22% 50%, #6d5570 0 7px, transparent 8px),
-    #2b1730;
+  filter: drop-shadow(0 13px 13px rgba(75, 26, 17, 0.24));
+  transform: rotate(-3deg) translateX(8%);
 }
 
 .home-feature-section {
@@ -749,113 +706,19 @@ label {
 }
 
 .home-card-icon {
-  position: relative;
   display: grid;
   place-items: center;
   width: clamp(48px, 13vw, 70px);
   height: clamp(48px, 13vw, 70px);
   border-radius: 999px;
-  color: #fffaf0;
-  font-size: clamp(1.6rem, 6vw, 2.4rem);
   box-shadow: 0 10px 18px rgba(98, 42, 20, 0.16);
 }
 
-.movie-list-icon {
-  background: linear-gradient(135deg, #ff5d54, #ef463e);
-}
-
-.movie-list-icon::before {
-  content: "";
-  width: 52%;
-  height: 44%;
-  border-radius: 4px;
-  background:
-    linear-gradient(90deg, transparent 0 16%, #ffeac5 16% 24%, transparent 24% 40%, #ffeac5 40% 48%, transparent 48% 64%, #ffeac5 64% 72%, transparent 72%),
-    linear-gradient(#351636 0 28%, #fff1d5 29% 33%, #351636 34% 100%);
-  border: 2px solid #351636;
-  box-shadow: 0 -10px 0 -4px #fff1d5;
-  transform: rotate(-5deg);
-}
-
-.find-icon {
-  background: linear-gradient(135deg, #ffd45d, #ffb23f);
-}
-
-.find-icon::before {
-  content: "";
-  width: 42%;
-  height: 48%;
-  border: 3px solid var(--plum);
-  border-radius: 4px;
-  background:
-    linear-gradient(90deg, var(--plum) 0 10%, transparent 10% 90%, var(--plum) 90%),
-    #fffaf0;
-}
-
-.find-icon::after {
-  content: "";
-  position: absolute;
-  right: 18%;
-  bottom: 20%;
-  width: 28%;
-  height: 4px;
-  border-radius: 999px;
-  background: #5940a8;
-  transform: rotate(45deg);
-}
-
-.rankings-icon {
-  background: linear-gradient(135deg, #5a2558, var(--plum));
-}
-
-.rankings-icon::before {
-  content: "";
-  position: absolute;
-  bottom: 21%;
-  left: 20%;
-  width: 60%;
-  height: 44%;
-  background:
-    linear-gradient(#ef463e 0 0) right bottom / 28% 58% no-repeat,
-    linear-gradient(#ffc94d 0 0) center bottom / 30% 100% no-repeat,
-    linear-gradient(#fff4dc 0 0) left bottom / 28% 72% no-repeat;
-  border-radius: 5px 5px 2px 2px;
-}
-
-.rankings-icon::after {
-  content: "1";
-  position: absolute;
-  top: 16%;
-  color: var(--accent-2);
-  font-family: var(--brand-font);
-  font-size: 1.25rem;
-  font-weight: 800;
-}
-
-.arena-icon {
-  background: linear-gradient(135deg, #ff7046, #ef463e);
-}
-
-.arena-icon::before {
-  content: "";
-  width: 58%;
-  height: 42%;
-  border-radius: 50% 50% 8px 8px;
-  background:
-    radial-gradient(circle at 50% 68%, #ffb12f 0 14%, #351636 15% 34%, transparent 35%),
-    linear-gradient(#f3bf68 0 0) bottom / 100% 22% no-repeat,
-    #351636;
-}
-
-.arena-icon::after {
-  content: "";
-  position: absolute;
-  top: 17%;
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: var(--accent-2);
-  box-shadow: -13px 13px 0 -3px #ffefb0, 13px 13px 0 -3px #ffefb0;
+.home-card-icon img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
 }
 
 .home-tagline {

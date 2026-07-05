@@ -1,4 +1,4 @@
-const CACHE_NAME = "pizza-movie-night-v119";
+const CACHE_NAME = "pizza-movie-night-v120";
 const ASSETS = [
   "./",
   "./index.html",
@@ -8,7 +8,12 @@ const ASSETS = [
   "./omdb-config.js",
   "./manifest.webmanifest",
   "./assets/pizza-logo.png",
-  "./assets/zombie.png"
+  "./assets/zombie.png",
+  "./assets/home/arena-icon.png",
+  "./assets/home/find-icon.png",
+  "./assets/home/hero-movie-pizza.png",
+  "./assets/home/movie-list-icon.png",
+  "./assets/home/rankings-icon.png"
 ];
 
 self.addEventListener("install", (event) => {
