@@ -670,19 +670,20 @@ label {
 
 .home-feature-section {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   flex: 1 1 auto;
-  gap: clamp(8px, 1.2dvh, 12px);
+  align-content: start;
+  gap: clamp(7px, 1dvh, 10px);
   min-height: 0;
 }
 
 .page-home .home-actions {
   z-index: 1;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, auto);
   align-self: stretch;
-  height: 100%;
-  gap: clamp(8px, 1.25dvh, 12px);
+  height: auto;
+  gap: clamp(7px, 1dvh, 10px);
   margin: 0;
 }
 
@@ -732,12 +733,12 @@ label {
 
 .home-card-action {
   display: grid;
-  grid-template-columns: clamp(48px, 13vw, 70px) minmax(0, 1fr) 16px;
+  grid-template-columns: clamp(42px, 11.5vw, 58px) minmax(0, 1fr) 14px;
   align-items: center;
-  gap: clamp(8px, 2vw, 12px);
-  min-height: 0;
-  height: 100%;
-  padding: clamp(8px, 2.2vw, 14px);
+  gap: clamp(7px, 1.7vw, 10px);
+  min-height: clamp(58px, 8dvh, 74px);
+  height: auto;
+  padding: clamp(6px, 1.6vw, 10px) clamp(8px, 2vw, 12px);
   border: 0;
   border-radius: 18px;
   text-align: left;
@@ -749,7 +750,7 @@ label {
   content: "›";
   color: var(--accent);
   font-family: var(--brand-font);
-  font-size: 2rem;
+  font-size: 1.72rem;
   line-height: 1;
 }
 
@@ -761,13 +762,13 @@ label {
 .home-card-action strong {
   color: var(--plum);
   font-family: var(--brand-font);
-  font-size: clamp(1rem, 3.6vw, 1.35rem);
+  font-size: clamp(0.98rem, 3.45vw, 1.26rem);
   line-height: 1;
 }
 
 .home-card-action small {
   color: var(--muted);
-  font-size: clamp(0.72rem, 2.6vw, 0.9rem);
+  font-size: clamp(0.68rem, 2.35vw, 0.82rem);
   font-weight: 700;
   line-height: 1.18;
 }
@@ -775,8 +776,8 @@ label {
 .home-card-icon {
   display: grid;
   place-items: center;
-  width: clamp(48px, 13vw, 70px);
-  height: clamp(48px, 13vw, 70px);
+  width: clamp(42px, 11.5vw, 58px);
+  height: clamp(42px, 11.5vw, 58px);
   border-radius: 999px;
   box-shadow: 0 10px 18px rgba(98, 42, 20, 0.16);
 }
@@ -2308,12 +2309,12 @@ body.game-playing .game-page .page-header {
   }
 
   .home-card-action {
-    min-height: clamp(72px, 11.2dvh, 92px);
+    min-height: clamp(56px, 7.6dvh, 68px);
   }
 
   .home-card-icon {
-    width: clamp(46px, 12vw, 58px);
-    height: clamp(46px, 12vw, 58px);
+    width: clamp(40px, 10.8vw, 50px);
+    height: clamp(40px, 10.8vw, 50px);
   }
 
   .home-tagline {
@@ -2383,18 +2384,18 @@ body.game-playing .game-page .page-header {
 
 .page-home .home-feature-section {
   flex: 1 1 auto;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: start;
   min-height: 0;
 }
 
 .page-home .home-actions {
   align-self: stretch;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  height: 100%;
+  grid-template-rows: repeat(2, auto);
+  height: auto;
   min-height: 0;
 }
 
 .page-home .home-card-action {
-  min-height: 0;
-  height: 100%;
+  height: auto;
 }
