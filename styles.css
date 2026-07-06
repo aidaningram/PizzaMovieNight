@@ -69,6 +69,11 @@ html.home-active-root {
   min-height: 100%;
   overflow: hidden;
   background-color: #fff0d2;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
+    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
+    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
+    #fff0d2;
 }
 
 body.home-active {
@@ -79,6 +84,11 @@ body.home-active {
   min-height: 100%;
   overflow: hidden;
   background-color: #fff0d2;
+  background:
+    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
+    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
+    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
+    #fff0d2;
 }
 
 body.home-active::before {
@@ -131,19 +141,6 @@ body.game-active .app-shell {
     radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
     linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
     #fff0d2;
-}
-
-@media (display-mode: standalone) {
-  html.game-active-root,
-  body.game-active,
-  body.game-active .app-shell {
-    height: 100lvh;
-    min-height: 100lvh;
-  }
-
-  .game-page {
-    --game-viewport-height: 100lvh;
-  }
 }
 
 button,
