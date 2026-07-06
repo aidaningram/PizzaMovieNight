@@ -39,4 +39,3 @@ Open `index.html` in a browser, or run a simple local web server from this folde
 4. If the wheel is empty, use Add movies to build the next wheel from the Movie List or a custom title.
 5. Spin the wheel on movie night.
 6. Confirm the picked movie to remove it from the wheel and add it to history.
-Deployment Refresh
