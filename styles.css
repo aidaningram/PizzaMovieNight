@@ -15,6 +15,11 @@
   --green: #58a85d;
   --danger: #d83c35;
   --shadow: 0 16px 34px rgba(98, 42, 20, 0.16);
+  --app-background:
+    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
+    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
+    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
+    #fff0d2;
   --brand-font: "Baloo 2", "Nunito", ui-rounded, system-ui, sans-serif;
   --body-font: "Nunito", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-family: var(--body-font);
@@ -36,12 +41,9 @@ html {
   overscroll-behavior: none;
   touch-action: manipulation;
   background-color: var(--bg);
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    var(--bg);
-  background-attachment: fixed;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 body {
@@ -55,12 +57,9 @@ body {
   overscroll-behavior: none;
   touch-action: manipulation;
   background-color: var(--bg);
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    var(--bg);
-  background-attachment: fixed;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
   color: var(--ink);
 }
 
@@ -69,11 +68,9 @@ html.home-active-root {
   min-height: 100%;
   overflow: hidden;
   background-color: #fff0d2;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 body.home-active {
@@ -84,11 +81,9 @@ body.home-active {
   min-height: 100%;
   overflow: hidden;
   background-color: #fff0d2;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 body.home-active::before {
@@ -96,11 +91,9 @@ body.home-active::before {
   position: fixed;
   inset: -28px;
   z-index: -1;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% calc(100lvh + 56px);
 }
 
 html.game-active-root {
@@ -109,11 +102,9 @@ html.game-active-root {
   overflow: hidden;
   overscroll-behavior: none;
   background-color: #fff0d2;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 body.game-active {
@@ -126,6 +117,9 @@ body.game-active {
   position: fixed;
   inset: 0;
   background-color: #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 body.game-active .app-shell {
@@ -136,11 +130,9 @@ body.game-active .app-shell {
   min-height: 100vh;
   min-height: 100dvh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 button,
@@ -230,11 +222,9 @@ h3 {
   min-height: 100svh;
   min-height: 100dvh;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    var(--bg);
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 body.home-active .app-shell {
@@ -243,11 +233,9 @@ body.home-active .app-shell {
   height: 100%;
   min-height: 100%;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 8% 4%, rgba(255, 201, 77, 0.42), transparent 22%),
-    radial-gradient(circle at 86% 16%, rgba(239, 70, 62, 0.12), transparent 26%),
-    linear-gradient(180deg, #fffaf0 0%, #fff7e7 58%, #ffe7b3 100%),
-    #fff0d2;
+  background: var(--app-background);
+  background-repeat: no-repeat;
+  background-size: 100% 100lvh;
 }
 
 .loading-view,
