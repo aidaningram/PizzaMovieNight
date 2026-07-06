@@ -279,6 +279,11 @@ body.home-active .app-shell {
   transform: translateX(-50%);
 }
 
+.page-home > *:not(.home-bottom-art) {
+  position: relative;
+  z-index: 1;
+}
+
 .login-copy,
 .welcome-panel,
 .form-stack {
@@ -798,6 +803,19 @@ label {
   font-weight: 700;
   line-height: 1;
   text-align: center;
+}
+
+.home-bottom-art {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  z-index: 0;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  display: block;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
 .wheel-page-stage {

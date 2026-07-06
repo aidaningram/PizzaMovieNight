@@ -1,4 +1,4 @@
-const CACHE_NAME = "pizza-movie-night-v128";
+const CACHE_NAME = "pizza-movie-night-v129";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const ASSETS = [
   "./assets/pizza-logo.png",
   "./assets/zombie.png",
   "./assets/home/arena-icon.png",
+  "./assets/home/bottom-bar.png",
   "./assets/home/find-icon.png",
   "./assets/home/hero-movie-pizza.png",
   "./assets/home/movie-list-icon.png",
