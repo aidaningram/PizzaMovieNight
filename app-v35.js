@@ -150,6 +150,9 @@ let appStarted = false;
 let authMode = "signin";
 let authReady = false;
 let activeSpinAnimationId = null;
+let wheelCutterAnimationId = null;
+let lastWheelMovieSignature = "";
+let lastWheelMovieCount = 0;
 let lastFamilyRenderSignature = "";
 let gameState = null;
 let gameLocalPlayer = null;
@@ -474,7 +477,18 @@ function renderWheelPage() {
       : "You can add one movie to this wheel.";
   }
   updateSpinUi();
-  drawWheel();
+  const currentWheelSignature = wheelMovieSignature();
+  const shouldAnimateWheelChange = Boolean(
+    currentWheelSignature
+      && lastWheelMovieSignature
+      && currentWheelSignature !== lastWheelMovieSignature
+      && activeMovies().length >= lastWheelMovieCount
+      && !spinActive
+  );
+  lastWheelMovieSignature = currentWheelSignature;
+  lastWheelMovieCount = activeMovies().length;
+  if (shouldAnimateWheelChange) animateWheelCutter();
+  else drawWheel();
   syncSharedSpin();
 }
 
@@ -4459,7 +4473,31 @@ async function removeFromMovieList(movieId) {
   await saveFamily({ movieList: movieList().filter((movie) => movie.id !== movieId) });
 }
 
-function drawWheel(rotation = 0) {
+function wheelMovieSignature() {
+  return activeMovies().map((movie) => `${movie.id}:${movie.title}`).join("|");
+}
+
+function animateWheelCutter() {
+  if (wheelCutterAnimationId) cancelAnimationFrame(wheelCutterAnimationId);
+  const start = performance.now();
+  const duration = 1050;
+
+  function animate(now) {
+    const progress = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - progress, 3);
+    drawWheel(0, eased);
+    if (progress < 1) {
+      wheelCutterAnimationId = requestAnimationFrame(animate);
+      return;
+    }
+    wheelCutterAnimationId = null;
+    drawWheel();
+  }
+
+  wheelCutterAnimationId = requestAnimationFrame(animate);
+}
+
+function drawWheel(rotation = 0, cutterProgress = 0) {
   const canvas = document.querySelector("#wheel-canvas");
   if (!canvas) return;
   const ctx = canvas.getContext("2d");
@@ -4478,52 +4516,216 @@ function drawWheel(rotation = 0) {
   ctx.rotate(rotation);
 
   if (!movies.length) {
-    ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.fillStyle = "#1d1a29";
-    ctx.fill();
-    ctx.strokeStyle = "#3b354e";
-    ctx.lineWidth = 10;
-    ctx.stroke();
-    ctx.fillStyle = "#f8efe0";
-    ctx.font = "bold 44px system-ui";
+    drawPizzaBase(ctx, radius, 0);
+    ctx.fillStyle = "#341735";
+    ctx.font = "900 44px 'Baloo 2', system-ui";
     ctx.textAlign = "center";
-    ctx.fillText("Wheel empty", 0, -6);
-    ctx.font = "28px system-ui";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Pizza empty", 0, -10);
+    ctx.font = "800 27px 'Nunito', system-ui";
     ctx.fillText("Add the next picks", 0, 42);
     ctx.restore();
     return;
   }
 
   const slice = (Math.PI * 2) / movies.length;
+  drawPizzaBase(ctx, radius, movies.length);
   movies.forEach((movie, index) => {
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.arc(0, 0, radius, index * slice, (index + 1) * slice);
-    ctx.closePath();
-    ctx.fillStyle = colors[index % colors.length];
-    ctx.fill();
-    ctx.strokeStyle = "#111019";
-    ctx.lineWidth = 7;
-    ctx.stroke();
+    const start = index * slice;
+    const end = (index + 1) * slice;
+    drawPizzaSlice(ctx, radius, start, end, index);
+  });
 
+  movies.forEach((movie, index) => {
+    const dividerProgress = cutterProgress ? Math.min(1, Math.max(0.25, cutterProgress + index * 0.08)) : 1;
+    const angle = index * slice;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * 52, Math.sin(angle) * 52);
+    ctx.lineTo(Math.cos(angle) * radius * 0.88 * dividerProgress, Math.sin(angle) * radius * 0.88 * dividerProgress);
+    ctx.strokeStyle = "rgba(126, 70, 30, 0.56)";
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.stroke();
+  });
+
+  movies.forEach((movie, index) => {
     ctx.save();
     ctx.rotate(index * slice + slice / 2);
-    ctx.translate(radius * 0.63, 0);
+    ctx.translate(radius * 0.58, 0);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#111019";
-    ctx.strokeStyle = "rgba(248, 239, 224, 0.35)";
-    ctx.lineWidth = 5;
-    ctx.font = `900 ${movies.length > 6 ? 27 : 32}px system-ui`;
-    wrapCanvasText(ctx, movie.title, 0, -18, Math.min(270, radius * 0.6), movies.length > 6 ? 30 : 36);
+    ctx.fillStyle = "#341735";
+    ctx.strokeStyle = "rgba(255, 247, 231, 0.82)";
+    ctx.lineWidth = 6;
+    ctx.font = `900 ${movies.length > 6 ? 27 : 34}px 'Baloo 2', system-ui`;
+    wrapCanvasText(ctx, movie.title, 0, -20, Math.min(255, radius * 0.56), movies.length > 6 ? 30 : 37);
     ctx.restore();
   });
 
   ctx.beginPath();
-  ctx.arc(0, 0, 50, 0, Math.PI * 2);
-  ctx.clip();
-  drawPizzaLogoCenter(ctx, 0, 0, 49);
+  ctx.arc(0, 0, 55, 0, Math.PI * 2);
+  ctx.fillStyle = "#341735";
+  ctx.fill();
+  ctx.strokeStyle = "#fff7e7";
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  ctx.fillStyle = "#fff7e7";
+  ctx.font = "900 22px 'Baloo 2', system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("SPIN", 0, 2);
+  ctx.restore();
+  if (cutterProgress) drawPizzaCutter(ctx, canvas, cutterProgress);
+}
+
+function drawPizzaBase(ctx, radius, slices = 0) {
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fillStyle = "#c77732";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.94, 0, Math.PI * 2);
+  ctx.fillStyle = "#f6a43a";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.88, 0, Math.PI * 2);
+  ctx.fillStyle = "#f0443e";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.82, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffd45a";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = "#8c4d1d";
+  ctx.lineWidth = 14;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.835, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(255, 248, 213, 0.82)";
+  ctx.lineWidth = 6;
+  ctx.stroke();
+
+  if (!slices) return;
+  for (let index = 0; index < slices; index += 1) {
+    const angle = index * ((Math.PI * 2) / slices) + Math.PI / slices;
+    const x = Math.cos(angle) * radius * 0.72;
+    const y = Math.sin(angle) * radius * 0.72;
+    drawWheelPepperoni(ctx, x, y, 15 + (index % 2) * 3);
+  }
+}
+
+function drawPizzaSlice(ctx, radius, start, end, index) {
+  const cheeseColors = ["#ffd35b", "#ffe07a", "#ffc94d", "#ffda70"];
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, radius * 0.82, start, end);
+  ctx.closePath();
+  ctx.fillStyle = cheeseColors[index % cheeseColors.length];
+  ctx.fill();
+
+  ctx.save();
+  ctx.rotate(start + (end - start) / 2);
+  const toppingOffsets = [
+    [radius * 0.37, -18, 13],
+    [radius * 0.62, 17, 16],
+    [radius * 0.73, -26, 10]
+  ];
+  toppingOffsets.slice(0, end - start > 0.75 ? 3 : 2).forEach(([x, y, size], toppingIndex) => {
+    if ((index + toppingIndex) % 3 === 0) drawWheelBasil(ctx, x, y, size);
+    else drawWheelPepperoni(ctx, x, y, size);
+  });
+  ctx.restore();
+}
+
+function drawWheelPepperoni(ctx, x, y, radius) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fillStyle = "#d9342d";
+  ctx.fill();
+  ctx.strokeStyle = "#8b221d";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  [
+    [-radius * 0.32, -radius * 0.12],
+    [radius * 0.2, -radius * 0.25],
+    [radius * 0.24, radius * 0.26],
+    [-radius * 0.16, radius * 0.32]
+  ].forEach(([dotX, dotY]) => {
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, Math.max(2, radius * 0.12), 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(118, 25, 21, 0.34)";
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawWheelBasil(ctx, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.62);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.48, size * 0.9, 0, 0, Math.PI * 2);
+  ctx.fillStyle = "#3f9a56";
+  ctx.fill();
+  ctx.strokeStyle = "#257342";
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawPizzaCutter(ctx, canvas, progress) {
+  const eased = 1 - Math.pow(1 - progress, 3);
+  const x = -90 + (canvas.width + 180) * eased;
+  const y = canvas.height * 0.2 + Math.sin(progress * Math.PI) * 28;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(-0.48);
+  ctx.globalAlpha = progress < 0.9 ? 1 : Math.max(0, 1 - (progress - 0.9) / 0.1);
+  ctx.lineCap = "round";
+
+  ctx.beginPath();
+  ctx.moveTo(30, 0);
+  ctx.lineTo(122, -2);
+  ctx.strokeStyle = "#341735";
+  ctx.lineWidth = 16;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(116, -2);
+  ctx.lineTo(158, -2);
+  ctx.strokeStyle = "#ff8b4d";
+  ctx.lineWidth = 18;
+  ctx.stroke();
+
+  ctx.save();
+  ctx.rotate(progress * Math.PI * 8);
+  ctx.beginPath();
+  ctx.arc(0, 0, 34, 0, Math.PI * 2);
+  ctx.fillStyle = "#f8efe0";
+  ctx.fill();
+  ctx.strokeStyle = "#341735";
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  for (let index = 0; index < 6; index += 1) {
+    const angle = index * Math.PI / 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(angle) * 28, Math.sin(angle) * 28);
+    ctx.strokeStyle = "rgba(52, 23, 53, 0.5)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+
   ctx.restore();
 }
 
@@ -4724,6 +4926,10 @@ function syncSharedSpin() {
 
   if (activeSpinAnimationId === spin.id) return;
   activeSpinAnimationId = spin.id;
+  if (wheelCutterAnimationId) {
+    cancelAnimationFrame(wheelCutterAnimationId);
+    wheelCutterAnimationId = null;
+  }
 
   const startedAt = Number(spin.startedAt) || Date.now();
   const duration = Number(spin.duration) || SPIN_DURATION_MS;
