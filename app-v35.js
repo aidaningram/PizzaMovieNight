@@ -4556,17 +4556,17 @@ function drawWheel(rotation = 0, cutterProgress = 0) {
     ctx.save();
     if (movies.length > 1) {
       ctx.rotate(index * slice + slice / 2);
-      ctx.translate(radius * 0.58, 0);
+      ctx.translate(radius * 0.64, 0);
     } else {
-      ctx.translate(0, -radius * 0.32);
+      ctx.translate(0, -radius * 0.48);
     }
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#341735";
     ctx.strokeStyle = "rgba(255, 247, 231, 0.82)";
     ctx.lineWidth = 6;
-    ctx.font = `900 ${movies.length > 6 ? 27 : movies.length === 1 ? 40 : 34}px 'Baloo 2', system-ui`;
-    wrapCanvasText(ctx, movie.title, 0, -20, Math.min(movies.length === 1 ? 360 : 255, radius * 0.74), movies.length > 6 ? 30 : 39);
+    ctx.font = `900 ${movies.length > 6 ? 27 : movies.length === 1 ? 42 : 34}px 'Baloo 2', system-ui`;
+    wrapCanvasText(ctx, movie.title, 0, movies.length === 1 ? 0 : -20, Math.min(movies.length === 1 ? 420 : 255, radius * 0.78), movies.length > 6 ? 30 : 39);
     ctx.restore();
   });
 
@@ -4633,26 +4633,27 @@ function drawPizzaSlice(ctx, radius, start, end, index) {
 
 function drawWheelToppings(ctx, radius, movieCount) {
   const toppings = [
-    [-0.53, -0.54, 18, "pepperoni"],
-    [-0.15, -0.68, 13, "basil"],
-    [0.28, -0.58, 20, "pepperoni"],
-    [0.62, -0.28, 15, "pepperoni"],
-    [-0.65, -0.1, 14, "basil"],
-    [-0.32, 0.08, 19, "pepperoni"],
-    [0.05, -0.12, 16, "pepperoni"],
-    [0.38, 0.1, 13, "basil"],
-    [-0.5, 0.43, 16, "pepperoni"],
-    [-0.1, 0.55, 14, "pepperoni"],
-    [0.35, 0.48, 18, "pepperoni"],
-    [0.64, 0.32, 12, "basil"],
-    [0.02, 0.29, 11, "olive"],
-    [-0.18, -0.35, 10, "olive"],
-    [0.51, -0.55, 10, "olive"]
+    [-0.52, -0.55, 0.06, "pepperoni"],
+    [-0.15, -0.7, 0.04, "basil"],
+    [0.26, -0.59, 0.066, "pepperoni"],
+    [0.61, -0.28, 0.052, "pepperoni"],
+    [-0.64, -0.12, 0.044, "basil"],
+    [-0.35, 0.08, 0.064, "pepperoni"],
+    [0.15, -0.08, 0.056, "pepperoni"],
+    [0.42, 0.14, 0.043, "basil"],
+    [-0.52, 0.43, 0.055, "pepperoni"],
+    [-0.08, 0.58, 0.048, "pepperoni"],
+    [0.35, 0.48, 0.062, "pepperoni"],
+    [0.64, 0.34, 0.04, "basil"],
+    [0.05, 0.31, 0.038, "olive"],
+    [-0.2, -0.35, 0.035, "olive"],
+    [0.49, -0.52, 0.034, "olive"]
   ];
-  const visibleCount = Math.min(toppings.length, Math.max(10, movieCount * 4));
-  toppings.slice(0, visibleCount).forEach(([x, y, size, type]) => {
+  const visibleCount = Math.min(toppings.length, movieCount === 1 ? 12 : Math.max(10, movieCount * 4));
+  toppings.slice(0, visibleCount).forEach(([x, y, sizeRatio, type]) => {
     const px = x * radius;
     const py = y * radius;
+    const size = sizeRatio * radius;
     if (type === "basil") drawWheelBasil(ctx, px, py, size);
     else if (type === "olive") drawWheelOlive(ctx, px, py, size);
     else drawWheelPepperoni(ctx, px, py, size);
