@@ -69,10 +69,7 @@ html.home-active-root {
   min-height: 100vh;
   min-height: 100dvh;
   overflow: hidden;
-  background-color: #fff0d2;
-  background: var(--app-background);
-  background-repeat: no-repeat;
-  background-size: 100% 100lvh;
+  background: #392440;
 }
 
 body.home-active {
@@ -84,10 +81,7 @@ body.home-active {
   min-height: 100vh;
   min-height: 100dvh;
   overflow: hidden;
-  background-color: #fff0d2;
-  background: var(--app-background);
-  background-repeat: no-repeat;
-  background-size: 100% 100lvh;
+  background: #392440;
 }
 
 body.home-active::before {
@@ -95,9 +89,7 @@ body.home-active::before {
   position: fixed;
   inset: -28px;
   z-index: -1;
-  background: var(--app-background);
-  background-repeat: no-repeat;
-  background-size: 100% calc(100lvh + 56px);
+  background: #392440;
 }
 
 html.game-active-root {
