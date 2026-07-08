@@ -4529,36 +4529,44 @@ function drawWheel(rotation = 0, cutterProgress = 0) {
   }
 
   const slice = (Math.PI * 2) / movies.length;
-  drawPizzaBase(ctx, radius, movies.length);
-  movies.forEach((movie, index) => {
-    const start = index * slice;
-    const end = (index + 1) * slice;
-    drawPizzaSlice(ctx, radius, start, end, index);
-  });
+  drawPizzaBase(ctx, radius);
+  if (movies.length > 1) {
+    movies.forEach((movie, index) => {
+      const start = index * slice;
+      const end = (index + 1) * slice;
+      drawPizzaSlice(ctx, radius, start, end, index);
+    });
 
-  movies.forEach((movie, index) => {
-    const dividerProgress = cutterProgress ? Math.min(1, Math.max(0.25, cutterProgress + index * 0.08)) : 1;
-    const angle = index * slice;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(angle) * 52, Math.sin(angle) * 52);
-    ctx.lineTo(Math.cos(angle) * radius * 0.88 * dividerProgress, Math.sin(angle) * radius * 0.88 * dividerProgress);
-    ctx.strokeStyle = "rgba(126, 70, 30, 0.56)";
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    ctx.stroke();
-  });
+    movies.forEach((movie, index) => {
+      const dividerProgress = cutterProgress ? Math.min(1, Math.max(0.25, cutterProgress + index * 0.08)) : 1;
+      const angle = index * slice;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * 52, Math.sin(angle) * 52);
+      ctx.lineTo(Math.cos(angle) * radius * 0.88 * dividerProgress, Math.sin(angle) * radius * 0.88 * dividerProgress);
+      ctx.strokeStyle = "rgba(126, 70, 30, 0.56)";
+      ctx.lineWidth = 5;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    });
+  }
+
+  drawWheelToppings(ctx, radius, movies.length);
 
   movies.forEach((movie, index) => {
     ctx.save();
-    ctx.rotate(index * slice + slice / 2);
-    ctx.translate(radius * 0.58, 0);
+    if (movies.length > 1) {
+      ctx.rotate(index * slice + slice / 2);
+      ctx.translate(radius * 0.58, 0);
+    } else {
+      ctx.translate(0, -radius * 0.32);
+    }
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#341735";
     ctx.strokeStyle = "rgba(255, 247, 231, 0.82)";
     ctx.lineWidth = 6;
-    ctx.font = `900 ${movies.length > 6 ? 27 : 34}px 'Baloo 2', system-ui`;
-    wrapCanvasText(ctx, movie.title, 0, -20, Math.min(255, radius * 0.56), movies.length > 6 ? 30 : 37);
+    ctx.font = `900 ${movies.length > 6 ? 27 : movies.length === 1 ? 40 : 34}px 'Baloo 2', system-ui`;
+    wrapCanvasText(ctx, movie.title, 0, -20, Math.min(movies.length === 1 ? 360 : 255, radius * 0.74), movies.length > 6 ? 30 : 39);
     ctx.restore();
   });
 
@@ -4578,7 +4586,7 @@ function drawWheel(rotation = 0, cutterProgress = 0) {
   if (cutterProgress) drawPizzaCutter(ctx, canvas, cutterProgress);
 }
 
-function drawPizzaBase(ctx, radius, slices = 0) {
+function drawPizzaBase(ctx, radius) {
   ctx.beginPath();
   ctx.arc(0, 0, radius, 0, Math.PI * 2);
   ctx.fillStyle = "#c77732";
@@ -4611,13 +4619,6 @@ function drawPizzaBase(ctx, radius, slices = 0) {
   ctx.lineWidth = 6;
   ctx.stroke();
 
-  if (!slices) return;
-  for (let index = 0; index < slices; index += 1) {
-    const angle = index * ((Math.PI * 2) / slices) + Math.PI / slices;
-    const x = Math.cos(angle) * radius * 0.72;
-    const y = Math.sin(angle) * radius * 0.72;
-    drawWheelPepperoni(ctx, x, y, 15 + (index % 2) * 3);
-  }
 }
 
 function drawPizzaSlice(ctx, radius, start, end, index) {
@@ -4628,19 +4629,34 @@ function drawPizzaSlice(ctx, radius, start, end, index) {
   ctx.closePath();
   ctx.fillStyle = cheeseColors[index % cheeseColors.length];
   ctx.fill();
+}
 
-  ctx.save();
-  ctx.rotate(start + (end - start) / 2);
-  const toppingOffsets = [
-    [radius * 0.37, -18, 13],
-    [radius * 0.62, 17, 16],
-    [radius * 0.73, -26, 10]
+function drawWheelToppings(ctx, radius, movieCount) {
+  const toppings = [
+    [-0.53, -0.54, 18, "pepperoni"],
+    [-0.15, -0.68, 13, "basil"],
+    [0.28, -0.58, 20, "pepperoni"],
+    [0.62, -0.28, 15, "pepperoni"],
+    [-0.65, -0.1, 14, "basil"],
+    [-0.32, 0.08, 19, "pepperoni"],
+    [0.05, -0.12, 16, "pepperoni"],
+    [0.38, 0.1, 13, "basil"],
+    [-0.5, 0.43, 16, "pepperoni"],
+    [-0.1, 0.55, 14, "pepperoni"],
+    [0.35, 0.48, 18, "pepperoni"],
+    [0.64, 0.32, 12, "basil"],
+    [0.02, 0.29, 11, "olive"],
+    [-0.18, -0.35, 10, "olive"],
+    [0.51, -0.55, 10, "olive"]
   ];
-  toppingOffsets.slice(0, end - start > 0.75 ? 3 : 2).forEach(([x, y, size], toppingIndex) => {
-    if ((index + toppingIndex) % 3 === 0) drawWheelBasil(ctx, x, y, size);
-    else drawWheelPepperoni(ctx, x, y, size);
+  const visibleCount = Math.min(toppings.length, Math.max(10, movieCount * 4));
+  toppings.slice(0, visibleCount).forEach(([x, y, size, type]) => {
+    const px = x * radius;
+    const py = y * radius;
+    if (type === "basil") drawWheelBasil(ctx, px, py, size);
+    else if (type === "olive") drawWheelOlive(ctx, px, py, size);
+    else drawWheelPepperoni(ctx, px, py, size);
   });
-  ctx.restore();
 }
 
 function drawWheelPepperoni(ctx, x, y, radius) {
@@ -4678,6 +4694,20 @@ function drawWheelBasil(ctx, x, y, size) {
   ctx.strokeStyle = "#257342";
   ctx.lineWidth = 2.5;
   ctx.stroke();
+  ctx.restore();
+}
+
+function drawWheelOlive(ctx, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.arc(0, 0, size, 0, Math.PI * 2);
+  ctx.fillStyle = "#34203d";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.48, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffd45a";
+  ctx.fill();
   ctx.restore();
 }
 
