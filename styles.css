@@ -1593,6 +1593,12 @@ body.game-playing .game-page .page-header {
   padding: 9px 12px;
 }
 
+.game-audio-test-note {
+  min-height: 1.2em;
+  margin: 0;
+  text-align: center;
+}
+
 .game-menu-actions button:disabled,
 .shoot-button:disabled,
 .fire-button:disabled {

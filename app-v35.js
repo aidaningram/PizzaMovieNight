@@ -1061,6 +1061,7 @@ function attachGameMenuControls() {
     unlockGameAudio();
     enterGameSpectate();
   });
+  document.querySelector("#test-sound-button")?.addEventListener("click", () => testGameSound());
   const gameBackButton = document.querySelector("#game-back-menu-button");
   gameBackButton?.addEventListener("pointerup", (event) => {
     event.preventDefault();
@@ -1958,11 +1959,12 @@ function getGameAudioContext() {
 
 function unlockGameAudio() {
   const context = getGameAudioContext();
-  if (!context) return;
+  if (!context) return Promise.resolve(null);
   gameAudioUnlocked = true;
   gameAudioReadyPromise = (context.state === "suspended" ? context.resume() : Promise.resolve())
     .catch(() => null)
     .then(() => playSilentGameAudioPulse(context));
+  return gameAudioReadyPromise;
 }
 
 function playSilentGameAudioPulse(context) {
@@ -2008,6 +2010,45 @@ function loadGameSoundBuffer(source) {
       delete gameSoundLoading[source];
     });
   return gameSoundLoading[source];
+}
+
+async function testGameSound() {
+  const note = document.querySelector("#game-audio-test-note");
+  const setNote = (message) => {
+    if (note) note.textContent = message;
+  };
+  setNote("Unlocking audio...");
+  const context = getGameAudioContext();
+  if (!context) {
+    setNote("Audio is not supported in this browser.");
+    return;
+  }
+  try {
+    await unlockGameAudio();
+    await (context.state === "suspended" ? context.resume().catch(() => null) : Promise.resolve());
+    setNote(`Audio context: ${context.state}. Loading test sound...`);
+    const buffer = await loadGameSoundBuffer(GAME_SOUND_ASSETS.collect);
+    if (!buffer) {
+      setNote(`Audio context: ${context.state}. Test sound could not load or decode.`);
+      return;
+    }
+    let played = false;
+    const scheduled = runWhenGameAudioReady(() => {
+      const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.collect, buffer, { volume: 1 });
+      played = Boolean(playing);
+    });
+    if (!scheduled) {
+      setNote(`Audio context: ${context.state}. Playback was blocked.`);
+      return;
+    }
+    window.setTimeout(() => {
+      setNote(played
+        ? `Audio context: ${context.state}. Test sound played.`
+        : `Audio context: ${context.state}. Playback did not start.`);
+    }, 120);
+  } catch (error) {
+    setNote(`Audio test failed: ${error?.message || "unknown error"}`);
+  }
 }
 
 function playGameSoundSource(source, options = {}) {
