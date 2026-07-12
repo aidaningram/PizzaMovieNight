@@ -141,22 +141,22 @@ const GAME_ZOMBIE_STARTS = [
   { id: "zombie-6", x: 470, y: 855, vx: -0.45, vy: -1, facing: -1, alive: true, deadUntil: 0 }
 ];
 const GAME_SOUND_ASSETS = {
-  basil: "./assets/sounds/BasilSound.mov",
-  collect: "./assets/sounds/CollectSound.mov",
-  meatball: "./assets/sounds/MeatballSound.mov",
-  meatballSecondary: "./assets/sounds/MeatballSoundSecondary.mov",
-  mushroomExplosion: "./assets/sounds/MushroomExplosion.mov",
-  mushroomFire: "./assets/sounds/MushroomFire.mov",
-  pepperoniFire: "./assets/sounds/PepperoniFire.mov",
+  basil: "./assets/sounds/BasilSound.mp3",
+  collect: "./assets/sounds/CollectSound.mp3",
+  meatball: "./assets/sounds/MeatballSound.mp3",
+  meatballSecondary: "./assets/sounds/MeatballSoundSecondary.mp3",
+  mushroomExplosion: "./assets/sounds/MushroomExplosion.mp3",
+  mushroomFire: "./assets/sounds/MushroomFire.mp3",
+  pepperoniFire: "./assets/sounds/PepperoniFire.mp3",
   pizzaDeath: [
-    "./assets/sounds/PizzaDeath1.mov",
-    "./assets/sounds/PizzaDeath2.mov",
-    "./assets/sounds/PizzaDeath3.mov",
-    "./assets/sounds/PizzaDeath4.mov"
+    "./assets/sounds/PizzaDeath1.mp3",
+    "./assets/sounds/PizzaDeath2.mp3",
+    "./assets/sounds/PizzaDeath3.mp3",
+    "./assets/sounds/PizzaDeath4.mp3"
   ],
-  spawning: "./assets/sounds/SpawingSound.mov",
-  zombieDeath: "./assets/sounds/ZombieDeath.mov",
-  zombieSpawn: "./assets/sounds/ZombieSpawn.mov"
+  spawning: "./assets/sounds/SpawingSound.mp3",
+  zombieDeath: "./assets/sounds/ZombieDeath.mp3",
+  zombieSpawn: "./assets/sounds/ZombieSpawn.mp3"
 };
 
 let services = null;

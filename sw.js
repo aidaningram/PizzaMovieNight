@@ -1,4 +1,4 @@
-const CACHE_NAME = "pizza-movie-night-v145";
+const CACHE_NAME = "pizza-movie-night-v146";
 const ASSETS = [
   "./",
   "./index.html",
@@ -15,20 +15,20 @@ const ASSETS = [
   "./assets/home/hero-movie-pizza.png",
   "./assets/home/movie-list-icon.png",
   "./assets/home/rankings-icon.png",
-  "./assets/sounds/BasilSound.mov",
-  "./assets/sounds/CollectSound.mov",
-  "./assets/sounds/MeatballSound.mov",
-  "./assets/sounds/MeatballSoundSecondary.mov",
-  "./assets/sounds/MushroomExplosion.mov",
-  "./assets/sounds/MushroomFire.mov",
-  "./assets/sounds/PepperoniFire.mov",
-  "./assets/sounds/PizzaDeath1.mov",
-  "./assets/sounds/PizzaDeath2.mov",
-  "./assets/sounds/PizzaDeath3.mov",
-  "./assets/sounds/PizzaDeath4.mov",
-  "./assets/sounds/SpawingSound.mov",
-  "./assets/sounds/ZombieDeath.mov",
-  "./assets/sounds/ZombieSpawn.mov"
+  "./assets/sounds/BasilSound.mp3",
+  "./assets/sounds/CollectSound.mp3",
+  "./assets/sounds/MeatballSound.mp3",
+  "./assets/sounds/MeatballSoundSecondary.mp3",
+  "./assets/sounds/MushroomExplosion.mp3",
+  "./assets/sounds/MushroomFire.mp3",
+  "./assets/sounds/PepperoniFire.mp3",
+  "./assets/sounds/PizzaDeath1.mp3",
+  "./assets/sounds/PizzaDeath2.mp3",
+  "./assets/sounds/PizzaDeath3.mp3",
+  "./assets/sounds/PizzaDeath4.mp3",
+  "./assets/sounds/SpawingSound.mp3",
+  "./assets/sounds/ZombieDeath.mp3",
+  "./assets/sounds/ZombieSpawn.mp3"
 ];
 
 self.addEventListener("install", (event) => {
