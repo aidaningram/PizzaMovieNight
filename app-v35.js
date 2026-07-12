@@ -118,7 +118,8 @@ const GAME_SOUND_VOLUMES = {
   zombieSpawn: 0.38
 };
 const GAME_MEATBALL_SIZE = 84;
-const GAME_HEARTBEAT_MS = 75;
+const GAME_HEARTBEAT_MS = 120;
+const GAME_SHARED_WRITE_MIN_MS = 120;
 const GAME_STALE_PLAYER_MS = 6000;
 const GAME_REMOTE_PLAYER_SMOOTHING = 18;
 const GAME_REMOTE_PLAYER_SNAP_DISTANCE = 180;
@@ -232,6 +233,12 @@ let gameZombieImage = null;
 let gameDisconnectCleanupReady = false;
 let gameMatchExitPending = false;
 let gameBackHandledAt = 0;
+let gameSyncInFlight = false;
+let gameSharedWriteInFlight = false;
+let gameLastSharedWriteAt = 0;
+let gameCachedCanvas = null;
+let gameCachedCanvasContext = null;
+let gameLastModePanelSignature = "";
 
 const demoStore = {
   key: "pizzaMovieDemoStateV2",
@@ -1377,6 +1384,27 @@ function updateGameModePanels() {
   const canQueue = active.length > 1 && !inProgress && match.status !== "ended";
 
   const showPlay = gameViewMode !== "menu";
+  const modePanelSignature = [
+    gameViewMode,
+    showPlay ? "play" : "menu",
+    match.status || "",
+    isParticipant ? "participant" : "visitor",
+    gameSpectating ? "spectating" : "playing",
+    active.map((entry) => entry.uid).join(","),
+    queuedCount,
+    isQueued ? "queued" : "unqueued",
+    gameSurvivalEnded() ? "survival-ended" : "",
+    Number(gameState?.solo?.lives || 0),
+    Number(gameState?.solo?.wave || 0)
+  ].join("|");
+  if (gameLastModePanelSignature === modePanelSignature) {
+    renderMatchLeaderboard();
+    renderGameRecords();
+    renderAmmoDisplay();
+    renderSurvivalHud();
+    return;
+  }
+  gameLastModePanelSignature = modePanelSignature;
   document.body.classList.toggle("game-playing", showPlay);
   document.body.classList.toggle("game-freeplay", showPlay && gameViewMode === "free");
   document.body.classList.toggle("game-solo", showPlay && gameViewMode === "solo");
@@ -2266,17 +2294,19 @@ function createGamePlayer() {
 }
 
 function gameTick(now) {
-  const canvas = document.querySelector("#game-canvas");
+  const canvas = gameCachedCanvas || document.querySelector("#game-canvas");
   if (!canvas) {
     cleanupGame();
     return;
   }
+  gameCachedCanvas = canvas;
   const dt = Math.min(0.04, (now - gameLastFrame) / 1000);
+  const wallNow = Date.now();
   gameLastFrame = now;
-  if (gameViewMode === "solo") updateSurvivalGame(dt, Date.now());
-  else if (gameLocalPlayer && !gameSpectating) updateLocalGame(dt, Date.now());
+  if (gameViewMode === "solo") updateSurvivalGame(dt, wallNow);
+  else if (gameLocalPlayer && !gameSpectating) updateLocalGame(dt, wallNow);
   updateGameVisualPlayers(dt);
-  drawGame();
+  drawGame(wallNow);
   gameAnimationId = requestAnimationFrame(gameTick);
 }
 
@@ -2419,11 +2449,11 @@ function updateLocalGame(dt, now) {
     || collectedSharedChanged
     || zombieDeathsSharedChanged;
   if (sharedArenaChanged) {
-    writeGameArenaSharedState(gameState, { includeZombies: zombieSharedChanged || zombieDeathsSharedChanged });
+    requestGameSharedStateWrite(gameState, { includeZombies: zombieSharedChanged || zombieDeathsSharedChanged }, now);
   }
   if (now - gameLastHeartbeat > GAME_HEARTBEAT_MS) {
     gameLastHeartbeat = now;
-    syncLocalGame(now);
+    requestGameSync(now);
   }
 }
 
@@ -2507,6 +2537,24 @@ function gameSurvivalFrozen(solo = {}, now = Date.now()) {
 
 function gameSurvivalEnded() {
   return gameViewMode === "solo" && Boolean(gameState?.solo?.gameOver);
+}
+
+function requestGameSync(now = Date.now()) {
+  if (gameSyncInFlight || gameViewMode === "solo" || !gameState) return;
+  gameSyncInFlight = true;
+  syncLocalGame(now).finally(() => {
+    gameSyncInFlight = false;
+  });
+}
+
+function requestGameSharedStateWrite(nextArena, options = {}, now = Date.now()) {
+  if (gameViewMode === "solo" || !nextArena) return;
+  if (gameSharedWriteInFlight || now - gameLastSharedWriteAt < GAME_SHARED_WRITE_MIN_MS) return;
+  gameSharedWriteInFlight = true;
+  gameLastSharedWriteAt = now;
+  writeGameArenaSharedState(nextArena, options).finally(() => {
+    gameSharedWriteInFlight = false;
+  });
 }
 
 function startNextSurvivalWave(wave, now = Date.now()) {
@@ -3913,7 +3961,7 @@ function shootGamePizza() {
     ...gameRemoteProjectiles,
     [shotId]: shot
   };
-  if (gameViewMode !== "solo") writeGameArenaSharedState(gameState);
+  if (gameViewMode !== "solo") requestGameSharedStateWrite(gameState, {}, now);
 }
 
 function gameCurrentShotType(player) {
@@ -3924,12 +3972,14 @@ function gameCurrentShotType(player) {
   return "pepperoni";
 }
 
-function drawGame() {
-  const canvas = document.querySelector("#game-canvas");
+function drawGame(now = Date.now()) {
+  const canvas = gameCachedCanvas || document.querySelector("#game-canvas");
   if (!canvas || !gameState) return;
+  gameCachedCanvas = canvas;
   if (canvas.width !== GAME_ARENA.width) canvas.width = GAME_ARENA.width;
   if (canvas.height !== GAME_ARENA.height) canvas.height = GAME_ARENA.height;
-  const ctx = canvas.getContext("2d");
+  const ctx = gameCachedCanvasContext || canvas.getContext("2d");
+  gameCachedCanvasContext = ctx;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, GAME_ARENA.width, GAME_ARENA.height);
   ctx.fillStyle = "#fff0d2";
@@ -3945,21 +3995,21 @@ function drawGame() {
   Object.values(gameVisualPlayers).forEach((player) => drawGamePlayer(ctx, player));
 
   if (gameViewMode === "solo") {
-    const text = gameSurvivalOverlayText(gameState.solo);
+    const text = gameSurvivalOverlayText(gameState.solo, now);
     if (text) drawGameCountdownOverlay(ctx, text);
     hideGameArenaStatus();
     if (gameState.solo?.gameOver) updateGameModePanels();
     renderSurvivalHud();
-    renderAmmoDisplay();
+    renderAmmoDisplay(now);
     return;
   }
 
   const match = gameState.match || defaultGameMatchState();
-  if (gameMatchFrozen(match)) {
-    showGameArenaStatus(gameMatchTimerText(match));
-    drawGameCountdownOverlay(ctx, gameCountdownText(match));
+  if (gameMatchFrozen(match, now)) {
+    showGameArenaStatus(gameMatchTimerText(match, now));
+    drawGameCountdownOverlay(ctx, gameCountdownText(match, now));
   } else if (match.status === "active") {
-    showGameArenaStatus(gameMatchTimerText(match));
+    showGameArenaStatus(gameMatchTimerText(match, now));
   } else if (match.status === "ended") {
     showGameArenaStatus("Match complete");
     updateGameModePanels();
@@ -3969,7 +4019,7 @@ function drawGame() {
     hideGameArenaStatus();
   }
   renderMatchLeaderboard();
-  renderAmmoDisplay();
+  renderAmmoDisplay(now);
 }
 
 function gameSurvivalOverlayText(solo = {}, now = Date.now()) {
@@ -4041,24 +4091,38 @@ function renderMatchLeaderboard() {
   const matchRows = match.status === "active" || match.status === "ended" ? gameMatchRows(match) : [];
   if (liveList) {
     const isFreeplay = gameViewMode === "free";
+    const rows = padGameScoreRows(isFreeplay ? gameFreeplayRows(arena) : matchRows, isFreeplay ? 2 : 5);
+    const signature = `${gameViewMode}|${rows.map((row) => `${row.uid || ""}:${row.name || ""}:${Number(row.xp || 0)}`).join("|")}`;
+    if (liveList.dataset.scoreSignature !== signature) {
+      liveList.dataset.scoreSignature = signature;
+      updateMatchListRows(liveList, rows);
+    }
     liveList.classList.toggle("freeplay-summary", isFreeplay);
-    updateMatchListRows(liveList, padGameScoreRows(isFreeplay ? gameFreeplayRows(arena) : matchRows, isFreeplay ? 2 : 5));
   }
   if (finalList) {
+    const rows = padGameScoreRows(matchRows, 5);
+    const signature = rows.map((row) => `${row.uid || ""}:${row.name || ""}:${Number(row.xp || 0)}`).join("|");
     finalList.classList.remove("freeplay-summary");
-    updateMatchListRows(finalList, padGameScoreRows(matchRows, 5));
+    if (finalList.dataset.scoreSignature !== signature) {
+      finalList.dataset.scoreSignature = signature;
+      updateMatchListRows(finalList, rows);
+    }
   }
 }
 
 function renderGameRecords() {
   const arena = normalizeGame(familyData?.gameArena || gameState);
-  updateRecordList(document.querySelector("#freeplay-records-list"), arena.records.freeplay || []);
-  updateRecordList(document.querySelector("#match-records-list"), arena.records.matches || []);
+  updateRecordList(document.querySelector("#freeplay-records-list"), arena.records.freeplay || [], "freeplay");
+  updateRecordList(document.querySelector("#match-records-list"), arena.records.matches || [], "matches");
 }
 
-function updateRecordList(list, rows) {
+function updateRecordList(list, rows, key = "") {
   if (!list) return;
-  list.replaceChildren(...padGameScoreRows(rows, 3).map((row, index) => {
+  const paddedRows = padGameScoreRows(rows, 3);
+  const signature = `${key}|${paddedRows.map((row) => `${row.uid || ""}:${row.name || ""}:${Number(row.xp || 0)}`).join("|")}`;
+  if (list.dataset.scoreSignature === signature) return;
+  list.dataset.scoreSignature = signature;
+  list.replaceChildren(...paddedRows.map((row, index) => {
     const item = document.createElement("li");
     item.innerHTML = `
       <span class="match-place">${index + 1}</span>
@@ -4069,7 +4133,7 @@ function updateRecordList(list, rows) {
   }));
 }
 
-function renderAmmoDisplay() {
+function renderAmmoDisplay(now = Date.now()) {
   const display = document.querySelector("#ammo-display");
   const icon = document.querySelector("#ammo-icon");
   const count = document.querySelector("#ammo-count");
@@ -4078,13 +4142,21 @@ function renderAmmoDisplay() {
   const visible = Boolean(player && gameViewMode !== "menu" && !gameSpectating);
   display.hidden = !visible;
   if (!visible) return;
-  normalizeGamePlayerPowerup(player, Date.now());
+  normalizeGamePlayerPowerup(player, now);
   const ammo = gameAmmoInfo(player);
+  const flashAlpha = ammo.flashes ? gameExpiringFlashAlpha(player.powerupUntil, GAME_POWERUP_FLASH_MS, now) : 1;
+  const iconOpacity = String(ammo.iconFlashes ? flashAlpha : 1);
+  const labelOpacity = String(ammo.labelFlashes ? flashAlpha : 1);
+  const signature = `${ammo.iconType}|${ammo.label}|${iconOpacity}|${labelOpacity}`;
+  if (display.dataset.ammoSignature === signature) return;
+  display.dataset.ammoSignature = signature;
   count.textContent = ammo.label;
-  const flashAlpha = ammo.flashes ? gameExpiringFlashAlpha(player.powerupUntil, GAME_POWERUP_FLASH_MS, Date.now()) : 1;
   icon.style.opacity = String(ammo.iconFlashes ? flashAlpha : 1);
   count.style.opacity = String(ammo.labelFlashes ? flashAlpha : 1);
-  drawGameAmmoIcon(icon, ammo.iconType);
+  if (icon.dataset.iconType !== ammo.iconType) {
+    icon.dataset.iconType = ammo.iconType;
+    drawGameAmmoIcon(icon, ammo.iconType);
+  }
 }
 
 function renderSurvivalHud() {
@@ -4097,6 +4169,9 @@ function renderSurvivalHud() {
   waveEl.hidden = !visible;
   if (!visible) return;
   const lives = Math.max(0, Math.min(GAME_SURVIVAL_LIVES, Number(solo.lives || 0)));
+  const signature = `${visible}|${lives}|${Number(solo.wave || 1)}`;
+  if (livesEl.dataset.survivalSignature === signature) return;
+  livesEl.dataset.survivalSignature = signature;
   livesEl.innerHTML = Array.from({ length: GAME_SURVIVAL_LIVES }, (_, index) => (
     `<span class="survival-heart${index >= lives ? " empty" : ""}" aria-hidden="true">♥</span>`
   )).join("");
@@ -4745,8 +4820,10 @@ function handleGameKeyUp(event) {
 function setGameStatus(text, online) {
   const statusPill = document.querySelector("#game-connection-status");
   if (!statusPill) return;
-  statusPill.textContent = text;
-  statusPill.classList.toggle("online", online);
+  if (statusPill.textContent !== text) statusPill.textContent = text;
+  if (statusPill.classList.contains("online") !== Boolean(online)) {
+    statusPill.classList.toggle("online", online);
+  }
   if (online) hideGameArenaStatus();
   else showGameArenaStatus(text);
 }
@@ -4754,13 +4831,13 @@ function setGameStatus(text, online) {
 function showGameArenaStatus(text) {
   const arenaStatus = document.querySelector("#arena-status");
   if (!arenaStatus) return;
-  arenaStatus.textContent = text;
-  arenaStatus.hidden = false;
+  if (arenaStatus.textContent !== text) arenaStatus.textContent = text;
+  if (arenaStatus.hidden) arenaStatus.hidden = false;
 }
 
 function hideGameArenaStatus() {
   const arenaStatus = document.querySelector("#arena-status");
-  if (arenaStatus) arenaStatus.hidden = true;
+  if (arenaStatus && !arenaStatus.hidden) arenaStatus.hidden = true;
 }
 
 function cleanupGame() {
@@ -4805,6 +4882,12 @@ function resetLocalGameRuntime() {
   gameRemovedProjectileIds = new Set();
   gameConsumedPickupIds = new Set();
   gamePlayedSoundEventIds = new Set();
+  gameSyncInFlight = false;
+  gameSharedWriteInFlight = false;
+  gameLastSharedWriteAt = 0;
+  gameCachedCanvas = null;
+  gameCachedCanvasContext = null;
+  gameLastModePanelSignature = "";
   stopAllGameSounds();
 }
 
