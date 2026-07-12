@@ -196,6 +196,8 @@ let gameBasilAudioByOwner = {};
 let gameAudioContext = null;
 let gameSoundBuffers = {};
 let gameSoundLoading = {};
+let gameAudioUnlocked = false;
+let gameSoundPreloadStarted = false;
 let gameJoinedArena = false;
 let gameViewMode = "menu";
 let gameMatchQueued = false;
@@ -1007,7 +1009,6 @@ function renderGamePage() {
   renderGameRuleIcons();
   gameState = normalizeGame(familyData?.gameArena);
   gameRemoteProjectiles = gameState.projectiles;
-  preloadGameSounds();
   attachGameMenuControls();
   attachGameControls();
   setGameStatus("Menu", false);
@@ -1904,20 +1905,24 @@ function processGameSoundEvents(events = {}) {
 
 function playGameSoundEvent(event = {}) {
   if (!event.id || gamePlayedSoundEventIds.has(event.id)) return;
-  gamePlayedSoundEventIds.add(event.id);
-  if (gamePlayedSoundEventIds.size > 160) {
-    gamePlayedSoundEventIds = new Set([...gamePlayedSoundEventIds].slice(-80));
-  }
   if (event.type === "basilStart") {
-    startGameBasilSound(event.ownerUid, event.createdAt);
+    if (startGameBasilSound(event.ownerUid, event.createdAt)) markGameSoundEventPlayed(event.id);
     return;
   }
   if (event.type === "basilStop") {
     stopGameBasilSound(event.ownerUid);
+    markGameSoundEventPlayed(event.id);
     return;
   }
   const source = gameSoundSourceForEvent(event);
-  if (source) playGameSoundSource(source);
+  if (source && playGameSoundSource(source)) markGameSoundEventPlayed(event.id);
+}
+
+function markGameSoundEventPlayed(id) {
+  gamePlayedSoundEventIds.add(id);
+  if (gamePlayedSoundEventIds.size > 160) {
+    gamePlayedSoundEventIds = new Set([...gamePlayedSoundEventIds].slice(-80));
+  }
 }
 
 function gameSoundSourceForEvent(event = {}) {
@@ -1942,6 +1947,19 @@ function gameSoundSources() {
   return Object.values(GAME_SOUND_ASSETS).flat();
 }
 
+function gamePrioritySoundSources() {
+  return [
+    GAME_SOUND_ASSETS.collect,
+    GAME_SOUND_ASSETS.pepperoniFire,
+    GAME_SOUND_ASSETS.mushroomFire,
+    GAME_SOUND_ASSETS.mushroomExplosion,
+    GAME_SOUND_ASSETS.zombieDeath,
+    GAME_SOUND_ASSETS.zombieSpawn,
+    GAME_SOUND_ASSETS.spawning,
+    ...GAME_SOUND_ASSETS.pizzaDeath
+  ];
+}
+
 function getGameAudioContext() {
   if (gameAudioContext) return gameAudioContext;
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -1953,14 +1971,40 @@ function getGameAudioContext() {
 function unlockGameAudio() {
   const context = getGameAudioContext();
   if (!context) return;
+  gameAudioUnlocked = true;
   if (context.state === "suspended") context.resume().catch(() => {});
+  playSilentGameAudioPulse(context);
   preloadGameSounds();
 }
 
 function preloadGameSounds() {
   const context = getGameAudioContext();
-  if (!context) return;
-  gameSoundSources().forEach((source) => loadGameSoundBuffer(source));
+  if (!context || gameSoundPreloadStarted) return;
+  gameSoundPreloadStarted = true;
+  [...new Set(gamePrioritySoundSources())].forEach((source, index) => {
+    window.setTimeout(() => loadGameSoundBuffer(source), index * 120);
+  });
+}
+
+function warmGamePowerupSound(type) {
+  if (type === "basil") loadGameSoundBuffer(GAME_SOUND_ASSETS.basil);
+  if (type === "meatball") {
+    loadGameSoundBuffer(GAME_SOUND_ASSETS.meatball);
+    loadGameSoundBuffer(GAME_SOUND_ASSETS.meatballSecondary);
+  }
+}
+
+function playSilentGameAudioPulse(context) {
+  try {
+    const buffer = context.createBuffer(1, 1, 22050);
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    gain.gain.value = 0;
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.start(0);
+  } catch (error) {}
 }
 
 function loadGameSoundBuffer(source) {
@@ -1985,16 +2029,17 @@ function loadGameSoundBuffer(source) {
 
 function playGameSoundSource(source, options = {}) {
   const context = getGameAudioContext();
-  if (!context || !source) return;
+  if (!context || !source || !gameAudioUnlocked) return false;
   if (context.state === "suspended") context.resume().catch(() => {});
   const buffer = gameSoundBuffers[source];
   if (buffer) {
     playGameSoundBuffer(source, buffer, options);
-    return;
+    return true;
   }
   loadGameSoundBuffer(source).then((loadedBuffer) => {
     if (loadedBuffer) playGameSoundBuffer(source, loadedBuffer, options);
   });
+  return true;
 }
 
 function playGameSoundBuffer(source, buffer, options = {}) {
@@ -2012,6 +2057,7 @@ function playGameSoundBuffer(source, buffer, options = {}) {
 }
 
 function startGameBasilSound(ownerUid = "unknown", createdAt = Date.now()) {
+  if (!gameAudioUnlocked) return false;
   const key = ownerUid || "unknown";
   stopGameBasilSound(key);
   const elapsed = Math.max(0, Date.now() - Number(createdAt || Date.now())) / 1000;
@@ -2024,6 +2070,7 @@ function startGameBasilSound(ownerUid = "unknown", createdAt = Date.now()) {
       if (gameBasilAudioByOwner[key]?.source === playing.source) delete gameBasilAudioByOwner[key];
     };
   });
+  return true;
 }
 
 function stopGameBasilSound(ownerUid = "unknown") {
@@ -3176,6 +3223,7 @@ function collectGameToppings(player, pickups, collectedPickups, now = Date.now()
       } else {
         if (!applyGamePowerup(player, type, now)) return;
         awardGameXp(player.uid, GAME_XP.special);
+        warmGamePowerupSound(type);
       }
       collectedPickups[pickup.id] = now;
       gameConsumedPickupIds.add(pickup.id);
