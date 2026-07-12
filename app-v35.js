@@ -193,6 +193,9 @@ let gameRemovedProjectileIds = new Set();
 let gameConsumedPickupIds = new Set();
 let gamePlayedSoundEventIds = new Set();
 let gameBasilAudioByOwner = {};
+let gameAudioContext = null;
+let gameSoundBuffers = {};
+let gameSoundLoading = {};
 let gameJoinedArena = false;
 let gameViewMode = "menu";
 let gameMatchQueued = false;
@@ -1004,6 +1007,7 @@ function renderGamePage() {
   renderGameRuleIcons();
   gameState = normalizeGame(familyData?.gameArena);
   gameRemoteProjectiles = gameState.projectiles;
+  preloadGameSounds();
   attachGameMenuControls();
   attachGameControls();
   setGameStatus("Menu", false);
@@ -1040,10 +1044,22 @@ function subscribeGameArena() {
 }
 
 function attachGameMenuControls() {
-  document.querySelector("#free-play-button")?.addEventListener("click", () => enterGameFreePlay());
-  document.querySelector("#survival-button")?.addEventListener("click", () => enterGameSurvival());
-  document.querySelector("#start-match-button")?.addEventListener("click", () => queueGameMatch());
-  document.querySelector("#spectate-button")?.addEventListener("click", () => enterGameSpectate());
+  document.querySelector("#free-play-button")?.addEventListener("click", () => {
+    unlockGameAudio();
+    enterGameFreePlay();
+  });
+  document.querySelector("#survival-button")?.addEventListener("click", () => {
+    unlockGameAudio();
+    enterGameSurvival();
+  });
+  document.querySelector("#start-match-button")?.addEventListener("click", () => {
+    unlockGameAudio();
+    queueGameMatch();
+  });
+  document.querySelector("#spectate-button")?.addEventListener("click", () => {
+    unlockGameAudio();
+    enterGameSpectate();
+  });
   const gameBackButton = document.querySelector("#game-back-menu-button");
   gameBackButton?.addEventListener("pointerup", (event) => {
     event.preventDefault();
@@ -1054,9 +1070,15 @@ function attachGameMenuControls() {
     returnGameMenu();
   });
   document.querySelector("#return-game-menu-button")?.addEventListener("click", () => returnGameMenu());
-  document.querySelector("#end-free-play-button")?.addEventListener("click", () => enterGameFreePlay());
+  document.querySelector("#end-free-play-button")?.addEventListener("click", () => {
+    unlockGameAudio();
+    enterGameFreePlay();
+  });
   document.querySelector("#survival-return-menu-button")?.addEventListener("click", () => returnGameMenu());
-  document.querySelector("#survival-play-again-button")?.addEventListener("click", () => enterGameSurvival());
+  document.querySelector("#survival-play-again-button")?.addEventListener("click", () => {
+    unlockGameAudio();
+    enterGameSurvival();
+  });
 }
 
 function enterGameFreePlay() {
@@ -1887,7 +1909,7 @@ function playGameSoundEvent(event = {}) {
     gamePlayedSoundEventIds = new Set([...gamePlayedSoundEventIds].slice(-80));
   }
   if (event.type === "basilStart") {
-    startGameBasilSound(event.ownerUid);
+    startGameBasilSound(event.ownerUid, event.createdAt);
     return;
   }
   if (event.type === "basilStop") {
@@ -1916,37 +1938,101 @@ function randomGamePizzaDeathSound() {
   return sounds[Math.floor(Math.random() * sounds.length)];
 }
 
-function playGameSoundSource(source) {
-  try {
-    const audio = new Audio(source);
-    audio.preload = "auto";
-    audio.volume = 0.85;
-    audio.play().catch(() => {});
-  } catch (error) {
-    // Browsers can block audio until the first tap; later arena actions will retry naturally.
-  }
+function gameSoundSources() {
+  return Object.values(GAME_SOUND_ASSETS).flat();
 }
 
-function startGameBasilSound(ownerUid = "unknown") {
+function getGameAudioContext() {
+  if (gameAudioContext) return gameAudioContext;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  gameAudioContext = new AudioContextClass();
+  return gameAudioContext;
+}
+
+function unlockGameAudio() {
+  const context = getGameAudioContext();
+  if (!context) return;
+  if (context.state === "suspended") context.resume().catch(() => {});
+  preloadGameSounds();
+}
+
+function preloadGameSounds() {
+  const context = getGameAudioContext();
+  if (!context) return;
+  gameSoundSources().forEach((source) => loadGameSoundBuffer(source));
+}
+
+function loadGameSoundBuffer(source) {
+  if (!source) return Promise.resolve(null);
+  const context = getGameAudioContext();
+  if (!context) return Promise.resolve(null);
+  if (gameSoundBuffers[source]) return Promise.resolve(gameSoundBuffers[source]);
+  if (gameSoundLoading[source]) return gameSoundLoading[source];
+  gameSoundLoading[source] = fetch(source)
+    .then((response) => response.arrayBuffer())
+    .then((arrayBuffer) => context.decodeAudioData(arrayBuffer.slice(0)))
+    .then((buffer) => {
+      gameSoundBuffers[source] = buffer;
+      return buffer;
+    })
+    .catch(() => null)
+    .finally(() => {
+      delete gameSoundLoading[source];
+    });
+  return gameSoundLoading[source];
+}
+
+function playGameSoundSource(source, options = {}) {
+  const context = getGameAudioContext();
+  if (!context || !source) return;
+  if (context.state === "suspended") context.resume().catch(() => {});
+  const buffer = gameSoundBuffers[source];
+  if (buffer) {
+    playGameSoundBuffer(source, buffer, options);
+    return;
+  }
+  loadGameSoundBuffer(source).then((loadedBuffer) => {
+    if (loadedBuffer) playGameSoundBuffer(source, loadedBuffer, options);
+  });
+}
+
+function playGameSoundBuffer(source, buffer, options = {}) {
+  const context = getGameAudioContext();
+  if (!context || !buffer) return null;
+  const bufferSource = context.createBufferSource();
+  const gain = context.createGain();
+  bufferSource.buffer = buffer;
+  gain.gain.value = options.volume ?? 0.85;
+  bufferSource.connect(gain);
+  gain.connect(context.destination);
+  const offset = Math.max(0, Math.min(options.offset || 0, Math.max(0, buffer.duration - 0.02)));
+  bufferSource.start(0, offset);
+  return { source: bufferSource, gain };
+}
+
+function startGameBasilSound(ownerUid = "unknown", createdAt = Date.now()) {
   const key = ownerUid || "unknown";
   stopGameBasilSound(key);
-  try {
-    const audio = new Audio(GAME_SOUND_ASSETS.basil);
-    audio.preload = "auto";
-    audio.volume = 0.75;
-    gameBasilAudioByOwner[key] = audio;
-    audio.play().catch(() => {});
-  } catch (error) {
-    delete gameBasilAudioByOwner[key];
-  }
+  const elapsed = Math.max(0, Date.now() - Number(createdAt || Date.now())) / 1000;
+  loadGameSoundBuffer(GAME_SOUND_ASSETS.basil).then((buffer) => {
+    if (!buffer || elapsed >= buffer.duration) return;
+    const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.basil, buffer, { volume: 0.75, offset: elapsed });
+    if (!playing) return;
+    gameBasilAudioByOwner[key] = playing;
+    playing.source.onended = () => {
+      if (gameBasilAudioByOwner[key]?.source === playing.source) delete gameBasilAudioByOwner[key];
+    };
+  });
 }
 
 function stopGameBasilSound(ownerUid = "unknown") {
   const key = ownerUid || "unknown";
-  const audio = gameBasilAudioByOwner[key];
-  if (!audio) return;
-  audio.pause();
-  audio.currentTime = 0;
+  const playing = gameBasilAudioByOwner[key];
+  if (!playing) return;
+  try {
+    playing.source.stop();
+  } catch (error) {}
   delete gameBasilAudioByOwner[key];
 }
 
@@ -4422,6 +4508,7 @@ function attachGameControls() {
 
 function shootGameFromButton(event) {
   event.preventDefault();
+  unlockGameAudio();
   event.currentTarget?.setPointerCapture?.(event.pointerId);
   gameFireHeld = true;
   startGameBasilFireSound();
@@ -4435,6 +4522,7 @@ function stopGameFire(event) {
 }
 
 function handleGameJoystick(event) {
+  unlockGameAudio();
   const joystick = document.querySelector("#joystick");
   const joystickThumb = document.querySelector("#joystick-thumb");
   if (!joystick || !joystickThumb) return;
@@ -4461,6 +4549,7 @@ function resetGameJoystick() {
 
 function handleGameKeyDown(event) {
   if (routeName() !== "game") return;
+  unlockGameAudio();
   if (event.key === "ArrowUp" || event.key.toLowerCase() === "w") gameKeyboardInput.up = true;
   if (event.key === "ArrowDown" || event.key.toLowerCase() === "s") gameKeyboardInput.down = true;
   if (event.key === "ArrowLeft" || event.key.toLowerCase() === "a") gameKeyboardInput.left = true;
