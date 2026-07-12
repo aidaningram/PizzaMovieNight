@@ -1,4 +1,4 @@
-const CACHE_NAME = "pizza-movie-night-v143";
+const CACHE_NAME = "pizza-movie-night-v144";
 const ASSETS = [
   "./",
   "./index.html",
@@ -14,7 +14,21 @@ const ASSETS = [
   "./assets/home/find-icon.png",
   "./assets/home/hero-movie-pizza.png",
   "./assets/home/movie-list-icon.png",
-  "./assets/home/rankings-icon.png"
+  "./assets/home/rankings-icon.png",
+  "./assets/sounds/BasilSound.mov",
+  "./assets/sounds/CollectSound.mov",
+  "./assets/sounds/MeatballSound.mov",
+  "./assets/sounds/MeatballSoundSecondary.mov",
+  "./assets/sounds/MushroomExplosion.mov",
+  "./assets/sounds/MushroomFire.mov",
+  "./assets/sounds/PepperoniFire.mov",
+  "./assets/sounds/PizzaDeath1.mov",
+  "./assets/sounds/PizzaDeath2.mov",
+  "./assets/sounds/PizzaDeath3.mov",
+  "./assets/sounds/PizzaDeath4.mov",
+  "./assets/sounds/SpawingSound.mov",
+  "./assets/sounds/ZombieDeath.mov",
+  "./assets/sounds/ZombieSpawn.mov"
 ];
 
 self.addEventListener("install", (event) => {
