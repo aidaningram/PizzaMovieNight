@@ -104,7 +104,7 @@ const GAME_SOUND_COOLDOWNS = {
   pizzaDeath: 180,
   spawning: 300,
   zombieDeath: 140,
-  zombieSpawn: 450
+  zombieSpawn: 1800
 };
 const GAME_SOUND_VOLUMES = {
   collect: 0.48,
@@ -2974,14 +2974,14 @@ async function writeGameArena(nextArena) {
     patch[`freeScores/${currentUser.uid}`] = nextArena.freeScores[currentUser.uid];
   }
   if (isHost || !existingZombies) {
-    const mergedZombieDeaths = mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths);
+    const mergedZombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(existingArena.zombieDeaths, nextArena.zombieDeaths), Date.now());
     const mergedRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(existingArena.removedProjectiles, nextArena.removedProjectiles), Date.now(), GAME_REMOVED_PROJECTILE_TTL_MS);
     const mergedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(existingArena.explosionEffects, nextArena.explosionEffects));
     const mergedCollectedPickups = mergeGameTimedMaps(existingArena.collectedPickups, nextArena.collectedPickups);
     const mergedSoundEvents = pruneGameTimedMap(mergeGameTimedMaps(existingArena.soundEvents, nextArena.soundEvents), Date.now(), GAME_SOUND_EVENT_TTL_MS);
     patch.zombies = nextArena.zombies || GAME_ZOMBIE_STARTS;
     patch.pepperoniPickups = gamePickupPatchValue(nextArena.pepperoniPickups || {}, mergedCollectedPickups || {});
-    addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+    patch.zombieDeaths = Object.keys(mergedZombieDeaths || {}).length ? mergedZombieDeaths : null;
     addGameTimedMapPatch(patch, "removedProjectiles", mergedRemovedProjectiles);
     patch.explosionEffects = Object.keys(mergedExplosionEffects || {}).length ? mergedExplosionEffects : null;
     patch.soundEvents = Object.keys(mergedSoundEvents || {}).length ? mergedSoundEvents : null;
@@ -3013,7 +3013,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     return;
   }
   const mergedCollectedPickups = mergeGameTimedMaps(familyData?.gameArena?.collectedPickups, nextArena.collectedPickups);
-  const mergedZombieDeaths = mergeGameTimedMaps(familyData?.gameArena?.zombieDeaths, nextArena.zombieDeaths);
+  const mergedZombieDeaths = pruneGameTimedMap(mergeGameTimedMaps(familyData?.gameArena?.zombieDeaths, nextArena.zombieDeaths), Date.now());
   const mergedRemovedProjectiles = pruneGameTimedMap(mergeGameTimedMaps(familyData?.gameArena?.removedProjectiles, nextArena.removedProjectiles), Date.now(), GAME_REMOVED_PROJECTILE_TTL_MS);
   const mergedExplosionEffects = pruneGameExplosionEffects(mergeGameTimedMaps(familyData?.gameArena?.explosionEffects, nextArena.explosionEffects));
   const mergedSoundEvents = pruneGameTimedMap(mergeGameTimedMaps(familyData?.gameArena?.soundEvents, nextArena.soundEvents), Date.now(), GAME_SOUND_EVENT_TTL_MS);
@@ -3037,7 +3037,7 @@ async function writeGameArenaSharedState(nextArena, options = {}) {
     patch.match = mergeGameMatch(familyData?.gameArena?.match, nextArena.match);
   }
   addGameTimedMapPatch(patch, "collectedPickups", mergedCollectedPickups);
-  addGameTimedMapPatch(patch, "zombieDeaths", mergedZombieDeaths);
+  patch.zombieDeaths = Object.keys(mergedZombieDeaths || {}).length ? mergedZombieDeaths : null;
   addGameTimedMapPatch(patch, "removedProjectiles", mergedRemovedProjectiles);
   patch.explosionEffects = Object.keys(mergedExplosionEffects || {}).length ? mergedExplosionEffects : null;
   patch.soundEvents = Object.keys(mergedSoundEvents || {}).length ? mergedSoundEvents : null;
