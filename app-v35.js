@@ -2026,7 +2026,14 @@ async function testGameSound() {
   try {
     await unlockGameAudio();
     await (context.state === "suspended" ? context.resume().catch(() => null) : Promise.resolve());
-    setNote(`Audio context: ${context.state}. Loading test sound...`);
+    setNote(`Audio context: ${context.state}. Playing beep...`);
+    const beepPlayed = playGameTestTone(context);
+    if (!beepPlayed) {
+      setNote(`Audio context: ${context.state}. Beep could not start.`);
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 520));
+    setNote(`Audio context: ${context.state}. Loading MP3 test...`);
     const buffer = await loadGameSoundBuffer(GAME_SOUND_ASSETS.collect);
     if (!buffer) {
       setNote(`Audio context: ${context.state}. Test sound could not load or decode.`);
@@ -2043,11 +2050,30 @@ async function testGameSound() {
     }
     window.setTimeout(() => {
       setNote(played
-        ? `Audio context: ${context.state}. Test sound played.`
+        ? `Audio context: ${context.state}. Beep and MP3 test played.`
         : `Audio context: ${context.state}. Playback did not start.`);
     }, 120);
   } catch (error) {
     setNote(`Audio test failed: ${error?.message || "unknown error"}`);
+  }
+}
+
+function playGameTestTone(context) {
+  try {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(660, context.currentTime);
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.9, context.currentTime + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.42);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(context.currentTime);
+    oscillator.stop(context.currentTime + 0.45);
+    return true;
+  } catch (error) {
+    return false;
   }
 }
 
