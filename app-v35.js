@@ -93,7 +93,30 @@ const GAME_MUSHROOM_EXPLOSION_SYNC_TTL_MS = 2500;
 const GAME_REMOVED_PROJECTILE_TTL_MS = 3500;
 const GAME_BASIL_FIRE_MS = 90;
 const GAME_BASIL_LIFE_MS = 496;
-const GAME_SOUND_EVENT_TTL_MS = 6500;
+const GAME_SOUND_EVENT_TTL_MS = 2600;
+const GAME_MAX_ACTIVE_ONE_SHOT_SOUNDS = 7;
+const GAME_SOUND_COOLDOWNS = {
+  collect: 90,
+  meatball: 450,
+  mushroomExplosion: 140,
+  mushroomFire: 140,
+  pepperoniFire: 160,
+  pizzaDeath: 180,
+  spawning: 300,
+  zombieDeath: 140,
+  zombieSpawn: 450
+};
+const GAME_SOUND_VOLUMES = {
+  collect: 0.48,
+  meatball: 0.65,
+  mushroomExplosion: 0.62,
+  mushroomFire: 0.5,
+  pepperoniFire: 0.32,
+  pizzaDeath: 0.58,
+  spawning: 0.45,
+  zombieDeath: 0.5,
+  zombieSpawn: 0.38
+};
 const GAME_MEATBALL_SIZE = 84;
 const GAME_HEARTBEAT_MS = 75;
 const GAME_STALE_PLAYER_MS = 6000;
@@ -196,6 +219,8 @@ let gameBasilAudioByOwner = {};
 let gameAudioContext = null;
 let gameSoundBuffers = {};
 let gameSoundLoading = {};
+let gameActiveOneShotSounds = [];
+let gameLastSoundPlayedAt = {};
 let gameAudioUnlocked = false;
 let gameAudioReadyPromise = null;
 let gameJoinedArena = false;
@@ -1917,7 +1942,13 @@ function playGameSoundEvent(event = {}) {
     return;
   }
   const source = gameSoundSourceForEvent(event);
-  if (source && playGameSoundSource(source)) markGameSoundEventPlayed(event.id);
+  if (source) {
+    playGameSoundSource(source, {
+      eventType: event.type,
+      volume: gameSoundVolumeForEvent(event)
+    });
+    markGameSoundEventPlayed(event.id);
+  }
 }
 
 function markGameSoundEventPlayed(id) {
@@ -1938,6 +1969,10 @@ function gameSoundSourceForEvent(event = {}) {
   if (event.type === "zombieDeath") return GAME_SOUND_ASSETS.zombieDeath;
   if (event.type === "zombieSpawn") return GAME_SOUND_ASSETS.zombieSpawn;
   return "";
+}
+
+function gameSoundVolumeForEvent(event = {}) {
+  return GAME_SOUND_VOLUMES[event.type] ?? 0.6;
 }
 
 function randomGamePizzaDeathSound() {
@@ -2080,6 +2115,7 @@ function playGameTestTone(context) {
 function playGameSoundSource(source, options = {}) {
   const context = getGameAudioContext();
   if (!context || !source || !gameAudioUnlocked) return false;
+  if (!canPlayGameOneShotSound(options.eventType || source)) return true;
   const buffer = gameSoundBuffers[source];
   if (buffer) {
     runWhenGameAudioReady(() => playGameSoundBuffer(source, buffer, options));
@@ -2094,6 +2130,8 @@ function playGameSoundSource(source, options = {}) {
 function playGameSoundBuffer(source, buffer, options = {}) {
   const context = getGameAudioContext();
   if (!context || !buffer) return null;
+  cleanupFinishedGameOneShotSounds();
+  if (!options.loop && gameActiveOneShotSounds.length >= GAME_MAX_ACTIVE_ONE_SHOT_SOUNDS) return null;
   const bufferSource = context.createBufferSource();
   const gain = context.createGain();
   bufferSource.buffer = buffer;
@@ -2102,7 +2140,30 @@ function playGameSoundBuffer(source, buffer, options = {}) {
   gain.connect(context.destination);
   const offset = Math.max(0, Math.min(options.offset || 0, Math.max(0, buffer.duration - 0.02)));
   bufferSource.start(0, offset);
-  return { source: bufferSource, gain };
+  const playing = { source: bufferSource, gain, ended: false };
+  bufferSource.onended = () => {
+    playing.ended = true;
+    gameActiveOneShotSounds = gameActiveOneShotSounds.filter((item) => item !== playing);
+    if (typeof options.onended === "function") options.onended();
+  };
+  if (!options.loop) gameActiveOneShotSounds.push(playing);
+  return playing;
+}
+
+function canPlayGameOneShotSound(key) {
+  const now = Date.now();
+  const cooldown = GAME_SOUND_COOLDOWNS[key] ?? 80;
+  const previous = gameLastSoundPlayedAt[key] || 0;
+  if (now - previous < cooldown) return false;
+  cleanupFinishedGameOneShotSounds();
+  if (gameActiveOneShotSounds.length >= GAME_MAX_ACTIVE_ONE_SHOT_SOUNDS) return false;
+  gameLastSoundPlayedAt[key] = now;
+  return true;
+}
+
+function cleanupFinishedGameOneShotSounds() {
+  if (!gameActiveOneShotSounds.length) return;
+  gameActiveOneShotSounds = gameActiveOneShotSounds.filter((item) => item && !item.ended);
 }
 
 function startGameBasilSound(ownerUid = "unknown", createdAt = Date.now()) {
@@ -2113,10 +2174,15 @@ function startGameBasilSound(ownerUid = "unknown", createdAt = Date.now()) {
   loadGameSoundBuffer(GAME_SOUND_ASSETS.basil).then((buffer) => {
     if (!buffer || elapsed >= buffer.duration) return;
     runWhenGameAudioReady(() => {
-      const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.basil, buffer, { volume: 0.75, offset: elapsed });
+      const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.basil, buffer, {
+        loop: true,
+        volume: 0.42,
+        offset: elapsed
+      });
       if (!playing) return;
       gameBasilAudioByOwner[key] = playing;
       playing.source.onended = () => {
+        playing.ended = true;
         if (gameBasilAudioByOwner[key]?.source === playing.source) delete gameBasilAudioByOwner[key];
       };
     });
@@ -2136,6 +2202,12 @@ function stopGameBasilSound(ownerUid = "unknown") {
 
 function stopAllGameSounds() {
   Object.keys(gameBasilAudioByOwner).forEach((key) => stopGameBasilSound(key));
+  gameActiveOneShotSounds.forEach((playing) => {
+    try {
+      playing.source.stop();
+    } catch (error) {}
+  });
+  gameActiveOneShotSounds = [];
 }
 
 function startGameBasilFireSound() {
