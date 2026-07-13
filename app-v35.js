@@ -631,6 +631,9 @@ function renderMovieListItems() {
   container.replaceChildren(...items.map((movie) => {
     const item = document.createElement("article");
     item.className = "movie-list-card";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    item.setAttribute("aria-label", `Open details for ${movie.title}`);
     item.innerHTML = `
       <div>
         <h3>${escapeHtml(movie.title)}</h3>
@@ -638,7 +641,17 @@ function renderMovieListItems() {
       </div>
       <button class="remove-button" type="button" aria-label="Remove ${escapeHtml(movie.title)}">×</button>
     `;
-    item.querySelector("button").addEventListener("click", () => removeFromMovieList(movie.id));
+    item.addEventListener("click", () => openMovieListDetail(movie));
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openMovieListDetail(movie);
+      }
+    });
+    item.querySelector("button").addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeFromMovieList(movie.id);
+    });
     return item;
   }));
 }
@@ -715,6 +728,18 @@ async function fetchOmdbDetails(imdbID) {
   const detailUrl = new URL("https://www.omdbapi.com/");
   detailUrl.searchParams.set("apikey", omdbApiKey);
   detailUrl.searchParams.set("i", imdbID);
+  detailUrl.searchParams.set("plot", "short");
+
+  const data = await fetchOmdbJson(detailUrl);
+  if (data.Response === "False") throw new Error(data.Error || "Movie details failed.");
+  return data;
+}
+
+async function fetchOmdbDetailsByTitle(title) {
+  const detailUrl = new URL("https://www.omdbapi.com/");
+  detailUrl.searchParams.set("apikey", omdbApiKey);
+  detailUrl.searchParams.set("t", title);
+  detailUrl.searchParams.set("type", "movie");
   detailUrl.searchParams.set("plot", "short");
 
   const data = await fetchOmdbJson(detailUrl);
@@ -819,6 +844,49 @@ function renderSearchResults(movies) {
 function openMovieDetail(movie) {
   sessionStorage.setItem(selectedMovieKey, JSON.stringify(movie));
   navigate("movie-detail");
+}
+
+async function openMovieListDetail(movie) {
+  if (!movie?.title) return;
+  if (movie.source === "omdb" || movie.imdbID || movie.plot || movie.poster) {
+    openMovieDetail(movie);
+    return;
+  }
+  if (!OMDB_READY) {
+    openMovieDetail(movieListDetailFallback(movie));
+    return;
+  }
+  try {
+    const details = await fetchOmdbDetailsByTitle(movie.title);
+    openMovieDetail({
+      ...movie,
+      ...omdbMovieData(details),
+      id: movie.id,
+      suggestedBy: movie.suggestedBy,
+      suggestedByUid: movie.suggestedByUid,
+      createdAt: movie.createdAt
+    });
+  } catch {
+    openMovieDetail(movieListDetailFallback(movie));
+  }
+}
+
+function movieListDetailFallback(movie) {
+  return {
+    title: movie.title,
+    year: movie.year || "",
+    rated: movie.rated || "",
+    genre: movie.genre || "",
+    runtime: movie.runtime || "",
+    poster: movie.poster || "",
+    plot: movie.plot || "",
+    actors: movie.actors || "",
+    director: movie.director || "",
+    writer: movie.writer || "",
+    imdbRating: movie.imdbRating || "",
+    awards: movie.awards || "",
+    source: movie.source || "movie-list"
+  };
 }
 
 function renderMovieDetailPage() {

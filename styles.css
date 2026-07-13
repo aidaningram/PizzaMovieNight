@@ -931,6 +931,15 @@ label {
   gap: 12px;
 }
 
+.movie-list-card[role="button"] {
+  cursor: pointer;
+}
+
+.movie-list-card[role="button"]:focus-visible {
+  outline: 3px solid rgba(255, 201, 77, 0.75);
+  outline-offset: 3px;
+}
+
 .movie-item h3,
 .movie-list-card h3 {
   overflow-wrap: anywhere;
