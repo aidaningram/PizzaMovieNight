@@ -903,6 +903,11 @@ label {
   text-align: center;
 }
 
+.clear-wheel-trigger {
+  width: min(100%, 420px);
+  margin: 0 auto;
+}
+
 .movie-list {
   display: grid;
   gap: 11px;
@@ -1254,6 +1259,15 @@ label {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
+}
+
+.clear-wheel-card label {
+  display: grid;
+  gap: 8px;
+}
+
+.clear-wheel-card input {
+  width: 100%;
 }
 
 .design-system-page {

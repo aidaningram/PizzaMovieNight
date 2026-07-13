@@ -521,12 +521,16 @@ function renderWheelPage() {
   document.querySelector("#spin-button").addEventListener("click", requestSpin);
   document.querySelector("#confirm-picked").addEventListener("click", confirmPicked);
   document.querySelector("#go-add-button").addEventListener("click", () => navigate("add"));
+  document.querySelector("#open-clear-wheel").addEventListener("click", showClearWheelOverlay);
 
   const empty = activeMovies().length === 0;
   const canAdd = canCurrentUserAddMovie();
   const spinActive = isSpinActive();
   const addPanel = document.querySelector("#empty-wheel-panel");
+  const clearButton = document.querySelector("#open-clear-wheel");
   document.querySelector("#spin-button").hidden = empty;
+  clearButton.hidden = empty;
+  clearButton.disabled = spinActive;
   addPanel.hidden = !canAdd || spinActive;
   if (canAdd) {
     addPanel.querySelector("h2").textContent = empty ? "The wheel is empty." : "Add your movie.";
@@ -5616,6 +5620,99 @@ async function confirmPicked() {
   }
   pendingWinner = null;
   await saveFamily(patch);
+}
+
+function showClearWheelOverlay() {
+  if (!activeMovies().length || document.querySelector(".clear-wheel-modal")) return;
+  const overlay = document.createElement("section");
+  overlay.className = "ranking-modal clear-wheel-modal";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "clear-wheel-title");
+  overlay.innerHTML = `
+    <form class="ranking-modal-card clear-wheel-card">
+      <p class="eyebrow">Wheel reset</p>
+      <h2 id="clear-wheel-title">Enter the family password</h2>
+      <p class="helper-text">This keeps the current wheel from being cleared by accident.</p>
+      <label>
+        Family password
+        <input id="clear-wheel-password" type="password" autocomplete="current-password" placeholder="Family password" />
+      </label>
+      <p id="clear-wheel-note" class="helper-text" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button class="secondary-action" type="button" data-clear-cancel>Cancel</button>
+        <button class="primary-action" type="submit" data-clear-submit disabled>Clear Wheel</button>
+      </div>
+    </form>
+  `;
+  const input = overlay.querySelector("#clear-wheel-password");
+  const submit = overlay.querySelector("[data-clear-submit]");
+  const note = overlay.querySelector("#clear-wheel-note");
+  const close = () => overlay.remove();
+  overlay.querySelector("[data-clear-cancel]").addEventListener("click", close);
+  input.addEventListener("input", () => {
+    const matches = input.value === FAMILY_PASSWORD;
+    submit.disabled = !matches;
+    note.textContent = input.value && !matches ? "That password does not match." : "";
+  });
+  overlay.querySelector("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (input.value !== FAMILY_PASSWORD) return;
+    const confirmed = await showAppConfirm({
+      title: "Are you sure you want to clear the wheel?",
+      message: "This removes every movie from the current wheel and starts a fresh round.",
+      confirmText: "Clear Wheel",
+      cancelText: "Keep Wheel"
+    });
+    if (!confirmed) return;
+    close();
+    await clearWheel();
+  });
+  document.body.append(overlay);
+  input.focus();
+}
+
+async function clearWheel() {
+  pendingWinner = null;
+  const patch = {
+    movies: [],
+    roundPicks: {},
+    spinReady: {},
+    spinState: null,
+    round: (familyData.round || 1) + 1
+  };
+  await saveFamily(patch);
+  familyData = { ...familyData, ...patch };
+  renderWheelPage();
+}
+
+function showAppConfirm({ title, message, confirmText = "Confirm", cancelText = "Cancel" }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("section");
+    overlay.className = "ranking-modal app-confirm-modal";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "app-confirm-title");
+    overlay.innerHTML = `
+      <div class="ranking-modal-card app-confirm-card">
+        <p class="eyebrow">Please confirm</p>
+        <h2 id="app-confirm-title">${escapeHtml(title)}</h2>
+        <p class="helper-text">${escapeHtml(message)}</p>
+        <div class="modal-actions">
+          <button class="secondary-action" type="button" data-confirm-cancel>${escapeHtml(cancelText)}</button>
+          <button class="primary-action" type="button" data-confirm-submit>${escapeHtml(confirmText)}</button>
+        </div>
+      </div>
+    `;
+    const finish = (value) => {
+      overlay.remove();
+      resolve(value);
+    };
+    overlay.querySelector("[data-confirm-cancel]").addEventListener("click", () => finish(false));
+    overlay.querySelector("[data-confirm-submit]").addEventListener("click", () => finish(true));
+    document.body.append(overlay);
+    overlay.querySelector("[data-confirm-cancel]").focus();
+  });
 }
 
 async function saveFamily(patch) {
