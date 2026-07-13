@@ -333,6 +333,13 @@ async function initFirebase() {
   });
 }
 
+async function ensureFirebaseAuthAvailable() {
+  if (!FIREBASE_READY) return false;
+  if (services?.auth && services?.authFns) return true;
+  await initFirebase();
+  return Boolean(services?.auth && services?.authFns);
+}
+
 async function enterFamilySpace(session) {
   const familyRef = services.dbFns.doc(services.db, "families", FAMILY_ID);
   const snap = await services.dbFns.getDoc(familyRef);
@@ -411,6 +418,10 @@ function renderLogin(message = "") {
       return;
     }
     try {
+      if (!(await ensureFirebaseAuthAvailable())) {
+        note.textContent = "Firebase is still loading. Try again in a moment.";
+        return;
+      }
       await services.authFns.sendPasswordResetEmail(services.auth, email);
       note.textContent = "Password reset email sent. Check your inbox.";
     } catch (error) {
@@ -437,6 +448,10 @@ function renderLogin(message = "") {
     note.textContent = authMode === "signup" ? "Creating account..." : "Signing in...";
     try {
       if (FIREBASE_READY) {
+        if (!(await ensureFirebaseAuthAvailable())) {
+          note.textContent = "Firebase is still loading. Try again in a moment.";
+          return;
+        }
         const credential = authMode === "signup"
           ? await services.authFns.createUserWithEmailAndPassword(services.auth, email, accountPassword)
           : await services.authFns.signInWithEmailAndPassword(services.auth, email, accountPassword);
@@ -6169,7 +6184,7 @@ function logout() {
   localStorage.removeItem(sessionKey);
   currentUser = null;
   familyData = null;
-  if (FIREBASE_READY && services?.auth) {
+  if (FIREBASE_READY && services?.auth && services?.authFns) {
     services.authFns.signOut(services.auth).catch(() => {});
   }
   location.hash = "";
@@ -6195,6 +6210,7 @@ function slug(value) {
 
 function friendlyAuthError(error) {
   const code = error?.code || "";
+  const message = error?.message || String(error || "");
   if (code.includes("email-already-in-use")) return "That email already has an account. Try signing in.";
   if (code.includes("invalid-credential") || code.includes("wrong-password")) return "The email or password did not match.";
   if (code.includes("user-not-found")) return "No account was found for that email.";
@@ -6202,7 +6218,10 @@ function friendlyAuthError(error) {
   if (code.includes("invalid-email")) return "Enter a valid email address.";
   if (code.includes("operation-not-allowed")) return "Email/password sign-in needs to be enabled in Firebase Authentication.";
   if (code.includes("permission-denied")) return "Firebase rules blocked that action. Check firebase.rules.";
-  return error?.message || "Something went wrong.";
+  if (message.includes("services.authFns") || message.includes("Failed to fetch dynamically imported module")) {
+    return "Firebase did not finish loading. Check your connection, then close and reopen the app.";
+  }
+  return message || "Something went wrong.";
 }
 
 function escapeHtml(value) {
