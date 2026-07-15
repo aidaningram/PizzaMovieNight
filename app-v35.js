@@ -1,8 +1,9 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { omdbApiKey } from "./omdb-config.js";
 
-const FAMILY_PASSWORD = "dogcatpig3";
-const FAMILY_ID = "pizza-movie-night";
+const LEGACY_FAMILY_PASSWORD = "dogcatpig3";
+const LEGACY_FAMILY_ID = "pizza-movie-night";
+const APP_STATE_COLLECTION = "pizzaMovieNightFamilies";
 const FIREBASE_READY = !Object.values(firebaseConfig).some((value) => value.startsWith("PASTE_"));
 const appRoot = document.querySelector("#app");
 const templates = {
@@ -186,6 +187,8 @@ const GAME_SOUND_ASSETS = {
 let services = null;
 let currentUser = null;
 let familyData = null;
+let activeFamilyId = LEGACY_FAMILY_ID;
+let activeFamilyProfile = null;
 let unsubscribeFamily = null;
 let unsubscribeGameArena = null;
 let pendingWinner = null;
@@ -305,14 +308,17 @@ async function initFirebase() {
   const firebaseAuth = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js");
   const firestore = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js");
   const realtimeDatabase = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js");
+  const firebaseFunctions = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js");
   const app = firebaseApp.initializeApp(firebaseConfig);
   services = {
     auth: firebaseAuth.getAuth(app),
     db: firestore.getFirestore(app),
     rtdb: realtimeDatabase.getDatabase(app),
+    functions: firebaseFunctions.getFunctions(app),
     authFns: firebaseAuth,
     dbFns: firestore,
-    rtdbFns: realtimeDatabase
+    rtdbFns: realtimeDatabase,
+    functionsFns: firebaseFunctions
   };
   authReady = true;
 
@@ -341,16 +347,10 @@ async function ensureFirebaseAuthAvailable() {
 }
 
 async function enterFamilySpace(session) {
-  const familyRef = services.dbFns.doc(services.db, "families", FAMILY_ID);
-  const snap = await services.dbFns.getDoc(familyRef);
-  if (snap.exists()) {
-    await services.dbFns.updateDoc(familyRef, {
-      [`members.${currentUser.uid}`]: memberRecord(),
-      updatedAt: services.dbFns.serverTimestamp()
-    });
-  } else {
-    await services.dbFns.setDoc(familyRef, firebaseFamilyData());
-  }
+  const resolved = await resolveActiveFamily(session);
+  activeFamilyId = resolved.familyId;
+  activeFamilyProfile = resolved.familyProfile;
+  const familyRef = familyStateRef();
 
   unsubscribeFamily = services.dbFns.onSnapshot(familyRef, (nextSnap) => {
     const nextFamilyData = { ...nextSnap.data(), id: nextSnap.id };
@@ -364,6 +364,194 @@ async function enterFamilySpace(session) {
   }, (error) => {
     renderLogin(error.message || "Firebase could not load the family wheel.");
   });
+}
+
+async function resolveActiveFamily(session = {}) {
+  const existingFamilyId = session.familyId || "";
+  if (existingFamilyId) {
+    const existingFamily = await loadSharedFamily(existingFamilyId);
+    if (existingFamily) {
+      await ensurePizzaMovieNightState(existingFamily.id, existingFamily);
+      await rememberSessionFamily(existingFamily.id);
+      return { familyId: existingFamily.id, familyProfile: existingFamily };
+    }
+  }
+
+  const memberFamily = await findSharedFamilyForCurrentUser();
+  if (memberFamily) {
+    await ensurePizzaMovieNightState(memberFamily.id, memberFamily);
+    await rememberSessionFamily(memberFamily.id);
+    return { familyId: memberFamily.id, familyProfile: memberFamily };
+  }
+
+  const legacyFamily = await loadLegacyFamily();
+  if (legacyFamily) {
+    await ensureLegacyFamilyMembership(legacyFamily.id);
+    await ensurePizzaMovieNightState(legacyFamily.id, legacyFamily);
+    await rememberSessionFamily(legacyFamily.id);
+    return { familyId: legacyFamily.id, familyProfile: legacyFamily };
+  }
+
+  const createdFamily = await createFallbackSharedFamily(session);
+  await ensurePizzaMovieNightState(createdFamily.id, createdFamily);
+  await rememberSessionFamily(createdFamily.id);
+  return { familyId: createdFamily.id, familyProfile: createdFamily };
+}
+
+async function loadSharedFamily(familyId) {
+  if (!familyId) return null;
+
+  const familyRef = services.dbFns.doc(services.db, "families", familyId);
+  const snap = await services.dbFns.getDoc(familyRef);
+
+  if (!snap.exists()) return null;
+
+  return {
+    id: snap.id,
+    ...snap.data(),
+    isLegacyPizzaMovieNightFamily: snap.id === LEGACY_FAMILY_ID
+  };
+}
+
+async function findSharedFamilyForCurrentUser() {
+  if (!currentUser?.uid) return null;
+
+  let snapshot;
+  try {
+    const familyQuery = services.dbFns.query(
+      services.dbFns.collection(services.db, "families"),
+      services.dbFns.where("memberUserIds", "array-contains", currentUser.uid),
+      services.dbFns.limit(1)
+    );
+    snapshot = await services.dbFns.getDocs(familyQuery);
+  } catch (error) {
+    if (error?.code === "permission-denied") return null;
+    throw error;
+  }
+
+  if (!snapshot.empty) {
+    const familyDoc = snapshot.docs[0];
+    return { id: familyDoc.id, ...familyDoc.data() };
+  }
+
+  return null;
+}
+
+async function loadLegacyFamily() {
+  const legacyRef = services.dbFns.doc(services.db, "families", LEGACY_FAMILY_ID);
+  const legacySnap = await services.dbFns.getDoc(legacyRef);
+
+  if (!legacySnap.exists()) return null;
+
+  return { id: legacySnap.id, ...legacySnap.data(), isLegacyPizzaMovieNightFamily: true };
+}
+
+async function ensureLegacyFamilyMembership(familyId) {
+  if (!currentUser?.uid) return;
+
+  const familyRef = services.dbFns.doc(services.db, "families", familyId);
+  await services.dbFns.setDoc(
+    familyRef,
+    {
+      displayName: familyDisplayName({ id: familyId }),
+      appSource: "pizza-movie-night",
+      memberUserIds: services.dbFns.arrayUnion(currentUser.uid),
+      members: {
+        [currentUser.uid]: memberRecord()
+      },
+      updatedAt: services.dbFns.serverTimestamp()
+    },
+    { merge: true }
+  );
+}
+
+async function createFallbackSharedFamily(session = {}) {
+  const familyRef = services.dbFns.doc(services.db, "families", LEGACY_FAMILY_ID);
+  const payload = {
+    displayName: "The Ingram Family",
+    appSource: "pizza-movie-night",
+    createdByUserId: currentUser.uid,
+    leadAdultUserId: currentUser.uid,
+    memberUserIds: [currentUser.uid],
+    ratingAdultUserIds: [currentUser.uid],
+    inviteCode: LEGACY_FAMILY_PASSWORD,
+    familyCode: LEGACY_FAMILY_PASSWORD,
+    members: {
+      [currentUser.uid]: memberRecord()
+    },
+    createdAt: services.dbFns.serverTimestamp(),
+    updatedAt: services.dbFns.serverTimestamp()
+  };
+
+  await services.dbFns.setDoc(familyRef, payload, { merge: true });
+  return { id: familyRef.id, ...payload, displayName: payload.displayName || session.name };
+}
+
+async function ensurePizzaMovieNightState(familyId, familyProfile = {}) {
+  const stateRef = services.dbFns.doc(services.db, APP_STATE_COLLECTION, familyId);
+  const stateSnap = await services.dbFns.getDoc(stateRef);
+
+  if (stateSnap.exists()) {
+    await services.dbFns.setDoc(
+      stateRef,
+      {
+        members: {
+          ...(stateSnap.data().members || {}),
+          [currentUser.uid]: memberRecord()
+        },
+        familyDisplayName: familyDisplayName(familyProfile),
+        updatedAt: services.dbFns.serverTimestamp()
+      },
+      { merge: true }
+    );
+    return;
+  }
+
+  const legacyState = familyProfile?.isLegacyPizzaMovieNightFamily
+    ? normalizeLegacyPizzaMovieNightState(familyProfile)
+    : defaultFamilyData(familyId, familyProfile);
+
+  await services.dbFns.setDoc(stateRef, {
+    ...legacyState,
+    id: familyId,
+    familyId,
+    familyDisplayName: familyDisplayName(familyProfile),
+    members: {
+      ...(legacyState.members || {}),
+      [currentUser.uid]: memberRecord()
+    },
+    migratedFromFamilyId: familyProfile?.isLegacyPizzaMovieNightFamily ? LEGACY_FAMILY_ID : "",
+    createdAt: services.dbFns.serverTimestamp(),
+    updatedAt: services.dbFns.serverTimestamp()
+  });
+}
+
+function normalizeLegacyPizzaMovieNightState(legacyFamily = {}) {
+  const {
+    displayName,
+    leadAdultUserId,
+    memberUserIds,
+    ratingAdultUserIds,
+    inviteCode,
+    familyCode,
+    appSource,
+    ...appState
+  } = legacyFamily;
+
+  return {
+    ...defaultFamilyData(legacyFamily.id || LEGACY_FAMILY_ID, legacyFamily),
+    ...appState,
+    id: legacyFamily.id || LEGACY_FAMILY_ID,
+    familyId: legacyFamily.id || LEGACY_FAMILY_ID,
+    joinCode: legacyFamily.joinCode || LEGACY_FAMILY_PASSWORD
+  };
+}
+
+async function rememberSessionFamily(familyId) {
+  const session = readSession();
+  if (!session) return;
+
+  localStorage.setItem(sessionKey, JSON.stringify({ ...session, familyId }));
 }
 
 function renderLogin(message = "") {
@@ -440,7 +628,7 @@ function renderLogin(message = "") {
       note.textContent = "The account passwords do not match.";
       return;
     }
-    if (authMode === "signup" && familyPassword !== FAMILY_PASSWORD) {
+    if (authMode === "signup" && familyPassword !== LEGACY_FAMILY_PASSWORD) {
       note.textContent = "That is not the family password.";
       return;
     }
@@ -477,6 +665,10 @@ function renderLogin(message = "") {
       location.hash = "#/home";
       start();
     } catch (error) {
+      console.error("PizzaMovieNight sign-in failed", {
+        code: error?.code || "",
+        message: error?.message || String(error || "")
+      });
       note.textContent = friendlyAuthError(error);
     }
   });
@@ -935,6 +1127,7 @@ function renderMovieDetailPage() {
         <p class="eyebrow">${escapeHtml([movie.year, movie.rated, movie.runtime].filter(isRealValue).join(" • "))}</p>
         <h1 class="page-title">${escapeHtml(movie.title)}</h1>
         <p>${escapeHtml(movie.plot && movie.plot !== "N/A" ? movie.plot : "No plot available.")}</p>
+        <section id="pizza-scale-summary" class="pizza-scale-summary" hidden></section>
         ${recommendation ? recommendationMarkup(recommendation) : ""}
         <dl class="movie-facts">
           ${movieFact("Genre", movie.genre)}
@@ -967,6 +1160,54 @@ function renderMovieDetailPage() {
     await addToWheel(movie);
     navigate("wheel");
   });
+  loadPizzaScaleSummary(movie);
+}
+
+async function loadPizzaScaleSummary(movie) {
+  const panel = document.querySelector("#pizza-scale-summary");
+  const imdbId = movie?.imdbId || movie?.imdbID || movie?.id || "";
+
+  if (!panel || !FIREBASE_READY || !services?.functions || !/^tt\d{5,12}$/.test(imdbId)) return;
+
+  try {
+    const getMovieScaleSummary = services.functionsFns.httpsCallable(
+      services.functions,
+      "getMovieScaleSummary"
+    );
+    const result = await getMovieScaleSummary({ imdbId, familyId: activeFamilyId });
+    const summary = result.data || {};
+    const guide = summary.guide;
+    const movieSummary = summary.movie;
+
+    if (!guide && !movieSummary && !summary.familyReview) return;
+
+    panel.hidden = false;
+    panel.innerHTML = pizzaScaleSummaryMarkup(summary);
+  } catch {
+    panel.hidden = true;
+  }
+}
+
+function pizzaScaleSummaryMarkup(summary = {}) {
+  const guide = summary.guide || {};
+  const movie = summary.movie || {};
+  const familyReview = summary.familyReview;
+  const score = familyReview?.pizzaScore || movie.pizzaScore;
+  const scoreText = Number.isFinite(Number(score)) ? `${Number(score).toFixed(1)} / 8 slices` : "No family score yet";
+  const guideSummary = guide.summary ? `<p>${escapeHtml(guide.summary)}</p>` : "";
+  const watchOut = Array.isArray(guide.watchOutFor) && guide.watchOutFor.length
+    ? `<small>Watch out for: ${escapeHtml(guide.watchOutFor.slice(0, 3).join(", "))}</small>`
+    : "";
+
+  return `
+    <div>
+      <p class="eyebrow">The Pizza Scale</p>
+      <strong>${escapeHtml(scoreText)}</strong>
+      ${familyReview ? `<span>Your family has rated this movie.</span>` : ""}
+    </div>
+    ${guideSummary}
+    ${watchOut}
+  `;
 }
 
 function movieFact(label, value) {
@@ -4993,7 +5234,7 @@ function cleanupGameArenaListener() {
 }
 
 function gameArenaRef() {
-  return services.rtdbFns.ref(services.rtdb, `families/${FAMILY_ID}/gameArena`);
+  return services.rtdbFns.ref(services.rtdb, `families/${activeFamilyId || LEGACY_FAMILY_ID}/gameArena`);
 }
 
 function gameClamp(value, min, max) {
@@ -5483,7 +5724,7 @@ async function requestSpin() {
 }
 
 async function requestSpinTransaction() {
-  const familyRef = services.dbFns.doc(services.db, "families", FAMILY_ID);
+  const familyRef = familyStateRef();
   await services.dbFns.runTransaction(services.db, async (transaction) => {
     const snap = await transaction.get(familyRef);
     if (!snap.exists()) return;
@@ -5666,13 +5907,13 @@ function showClearWheelOverlay() {
   const close = () => overlay.remove();
   overlay.querySelector("[data-clear-cancel]").addEventListener("click", close);
   input.addEventListener("input", () => {
-    const matches = input.value === FAMILY_PASSWORD;
+    const matches = input.value === familyClearPassword();
     submit.disabled = !matches;
     note.textContent = input.value && !matches ? "That password does not match." : "";
   });
   overlay.querySelector("form").addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (input.value !== FAMILY_PASSWORD) return;
+    if (input.value !== familyClearPassword()) return;
     const confirmed = await showAppConfirm({
       title: "Are you sure you want to clear the wheel?",
       message: "This removes every movie from the current wheel and starts a fresh round.",
@@ -5736,17 +5977,19 @@ async function saveFamily(patch) {
     demoStore.write(nextData);
     return;
   }
-  await services.dbFns.updateDoc(services.dbFns.doc(services.db, "families", FAMILY_ID), {
+  await services.dbFns.setDoc(familyStateRef(), {
     ...patch,
     updatedAt: services.dbFns.serverTimestamp()
-  });
+  }, { merge: true });
 }
 
-function defaultFamilyData() {
+function defaultFamilyData(familyId = activeFamilyId || LEGACY_FAMILY_ID, familyProfile = activeFamilyProfile) {
   return {
-    id: FAMILY_ID,
-    name: "Pizza",
-    joinCode: FAMILY_PASSWORD,
+    id: familyId,
+    familyId,
+    name: familyDisplayName(familyProfile),
+    familyDisplayName: familyDisplayName(familyProfile),
+    joinCode: LEGACY_FAMILY_PASSWORD,
     round: 1,
     members: {},
     movies: [],
@@ -5767,7 +6010,7 @@ function defaultFamilyData() {
 
 function firebaseFamilyData() {
   return {
-    ...defaultFamilyData(),
+    ...defaultFamilyData(activeFamilyId, activeFamilyProfile),
     members: { [currentUser.uid]: memberRecord() },
     createdAt: services.dbFns.serverTimestamp(),
     updatedAt: services.dbFns.serverTimestamp()
@@ -5791,6 +6034,23 @@ function memberRecord() {
     email: currentUser?.email || readSession()?.email || "",
     joinedAt: Date.now()
   };
+}
+
+function familyStateRef() {
+  return services.dbFns.doc(services.db, APP_STATE_COLLECTION, activeFamilyId || LEGACY_FAMILY_ID);
+}
+
+function familyDisplayName(familyProfile = activeFamilyProfile || familyData || {}) {
+  return (
+    familyProfile?.familyDisplayName ||
+    familyProfile?.displayName ||
+    familyProfile?.name ||
+    "The Ingram Family"
+  );
+}
+
+function familyClearPassword() {
+  return familyData?.joinCode || activeFamilyProfile?.familyCode || activeFamilyProfile?.inviteCode || LEGACY_FAMILY_PASSWORD;
 }
 
 function activeMovies() {
@@ -6125,7 +6385,9 @@ function renderAppMenu() {
       header.querySelector(".home-logo-button").addEventListener("click", () => navigate("home"));
     }
     if (!header.querySelector(".family-title")) {
-      slot.insertAdjacentHTML("beforebegin", `<div class="family-title">The Ingram Family</div>`);
+      slot.insertAdjacentHTML("beforebegin", `<div class="family-title">${escapeHtml(familyDisplayName())}</div>`);
+    } else {
+      header.querySelector(".family-title").textContent = familyDisplayName();
     }
   }
 

@@ -1,7 +1,7 @@
 {
   "rules": {
     "families": {
-      "pizza-movie-night": {
+      "$familyId": {
         "gameArena": {
           ".read": "auth != null",
           ".write": "auth != null"

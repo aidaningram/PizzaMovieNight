@@ -1035,6 +1035,40 @@ label {
   font-weight: 800;
 }
 
+.pizza-scale-summary {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(239, 70, 62, 0.36);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(255, 201, 77, 0.2), transparent 55%),
+    rgba(255, 247, 231, 0.82);
+}
+
+.pizza-scale-summary[hidden] {
+  display: none;
+}
+
+.pizza-scale-summary > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.pizza-scale-summary strong {
+  color: var(--ink);
+  font-size: 1.18rem;
+  font-weight: 950;
+}
+
+.pizza-scale-summary p,
+.pizza-scale-summary small,
+.pizza-scale-summary span {
+  color: var(--muted);
+}
+
 .review-link {
   display: inline-flex;
   align-items: center;
