@@ -1453,9 +1453,11 @@ async function loadWatchProviders(movie) {
       return;
     }
 
-    const iconProviders = getUniqueWatchProviders(providers).slice(0, 8);
+    const iconProviders = getUniqueWatchProviders({ stream: providers.stream }).slice(0, 8);
     strip.setAttribute("aria-label", `${providerCount} watch option${providerCount === 1 ? "" : "s"} available`);
-    strip.innerHTML = iconProviders.map(watchProviderIconMarkup).join("");
+    strip.innerHTML = iconProviders.length
+      ? iconProviders.map(watchProviderIconMarkup).join("")
+      : `<span class="watch-unavailable">Rent/buy available</span>`;
     details.innerHTML = `
       ${watchProviderGroupMarkup("Stream", providers.stream)}
       ${watchProviderGroupMarkup("Rent", providers.rent)}
@@ -1499,15 +1501,16 @@ function normalizeWatchProviderGroups(value) {
             logoUrl: String(provider?.logoUrl || "").trim(),
             webUrl: String(provider?.webUrl || "").trim()
           }))
-          .filter((provider) => provider.name && !isIndirectWatchProvider(provider))
+          .filter((provider) => provider.name && !isHiddenWatchProvider(provider))
           .slice(0, 12)
         : []
     ])
   );
 }
 
-function isIndirectWatchProvider(provider) {
-  return /\(\s*via\b/i.test(String(provider?.name || ""));
+function isHiddenWatchProvider(provider) {
+  const name = String(provider?.name || "");
+  return /\(\s*via\b/i.test(name) || /^kanopy$/i.test(name.trim());
 }
 
 function getProviderCount(groups) {
