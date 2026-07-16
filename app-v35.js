@@ -408,11 +408,34 @@ function hydratePizzaMovieNightFamilyData(rawData = {}) {
     ...rawData,
     familyDisplayName: rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
     name: rawData.name || rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
-    members: {
-      ...activeFamilyMembers,
-      ...(rawData.members || {})
-    }
+    members: mergeVisibleFamilyMembers(rawData.members || {}, activeFamilyMembers)
   };
+}
+
+function mergeVisibleFamilyMembers(appMembers = {}, sharedMembers = {}) {
+  const merged = {};
+  const claimedNames = new Set();
+
+  Object.entries(sharedMembers).forEach(([uid, member]) => {
+    merged[uid] = member;
+    const nameKey = memberNameKey(member);
+    if (nameKey) claimedNames.add(nameKey);
+  });
+
+  Object.entries(appMembers).forEach(([uid, member]) => {
+    const nameKey = memberNameKey(member);
+    if (nameKey && claimedNames.has(nameKey) && !sharedMembers[uid]) return;
+    merged[uid] = member;
+  });
+
+  return merged;
+}
+
+function memberNameKey(member = {}) {
+  return String(member.name || member.firstNameOrNickname || member.email || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
 }
 
 async function resolveActiveFamily(session = {}) {
