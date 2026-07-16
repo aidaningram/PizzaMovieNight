@@ -1,5 +1,6 @@
 import { firebaseConfig } from "./firebase-config.js";
 import { omdbApiKey } from "./omdb-config.js";
+import { pizzaScaleGuideFallbacks } from "./pizza-scale-guides.js";
 
 const LEGACY_FAMILY_PASSWORD = "dogcatpig3";
 const LEGACY_FAMILY_ID = "pizza-movie-night";
@@ -38,9 +39,13 @@ const genreSearchSeeds = {
 };
 const knownPizzaScaleMovieIds = {
   "kiki's delivery service": "tt0097814",
+  "paddington 2": "tt4468740",
   "spider-man: into the spider-verse": "tt4633694",
   "the princess bride": "tt0093779"
 };
+const pizzaScaleGuideFallbackMap = new Map(
+  pizzaScaleGuideFallbacks.map((guide) => [guide.id || guide.imdbId, guide])
+);
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
@@ -1427,7 +1432,7 @@ async function getPizzaScaleMovieData(imdbId) {
     },
     guide: guideDoc?.exists?.()
       ? normalizePizzaScaleGuide(guideDoc.data())
-      : normalizePizzaScaleGuide(summary.guide)
+      : normalizePizzaScaleGuide(summary.guide || pizzaScaleGuideFallbackMap.get(imdbId))
   };
 }
 
@@ -1643,10 +1648,11 @@ function guideConcernLabel(key) {
 
 function pizzaScaleMovieUrl(movie = {}, review = false) {
   const url = new URL(PIZZA_SCALE_BASE_URL);
-  url.hash = review ? "#/rate-movie" : "#/movie-stats";
   const imdbId = movie.imdbId || movie.imdbID || movie.id || "";
-  if (imdbId) url.searchParams.set("imdbId", imdbId);
-  if (movie.title) url.searchParams.set("title", movie.title);
+  const params = new URLSearchParams();
+  if (imdbId) params.set("imdbId", imdbId);
+  if (movie.title) params.set("title", movie.title);
+  url.hash = `#/${review ? "rate-movie" : "movie-stats"}${params.toString() ? `?${params.toString()}` : ""}`;
   return url.toString();
 }
 

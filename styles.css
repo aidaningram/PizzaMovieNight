@@ -384,9 +384,16 @@ label {
 .primary-action,
 .secondary-action,
 .remove-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 46px;
+  padding: 0 18px;
   border-radius: 8px;
   font-weight: 950;
+  line-height: 1.1;
+  text-align: center;
+  text-decoration: none;
 }
 
 .primary-action {
@@ -1184,6 +1191,12 @@ label {
 
 .pizza-guide-actions {
   grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.pizza-guide-actions a {
+  width: 100%;
+  text-decoration: none;
 }
 
 .pizza-guide-panel {
