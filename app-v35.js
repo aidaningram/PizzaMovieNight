@@ -382,6 +382,8 @@ async function loadPizzaScaleFamilyMembers(familyId) {
     snapshot.docs.forEach((memberDoc) => {
       const member = memberDoc.data() || {};
       const memberKey = member.userId || member.linkedAccountUserId || memberDoc.id;
+      const linkedAccountUserId = member.linkedAccountUserId || member.userId || "";
+      if (!linkedAccountUserId && !member.email) return;
       members[memberKey] = {
         name: member.firstNameOrNickname || member.displayName || "Family member",
         email: member.email || "",
@@ -389,8 +391,8 @@ async function loadPizzaScaleFamilyMembers(familyId) {
         permission: member.permission || "",
         birthDate: member.birthDate || "",
         gender: member.gender || "",
-        profileOnly: !member.userId && !member.linkedAccountUserId,
-        linkedAccountUserId: member.linkedAccountUserId || member.userId || "",
+        profileOnly: !linkedAccountUserId,
+        linkedAccountUserId,
         familyMemberId: memberDoc.id,
         joinedAt: member.createdAt || Date.now()
       };
@@ -423,12 +425,17 @@ function mergeVisibleFamilyMembers(appMembers = {}, sharedMembers = {}) {
   });
 
   Object.entries(appMembers).forEach(([uid, member]) => {
+    if (!memberHasAccount(member)) return;
     const nameKey = memberNameKey(member);
     if (nameKey && claimedNames.has(nameKey) && !sharedMembers[uid]) return;
     merged[uid] = member;
   });
 
   return merged;
+}
+
+function memberHasAccount(member = {}) {
+  return Boolean(member.email || member.userId || member.uid || member.linkedAccountUserId);
 }
 
 function memberNameKey(member = {}) {
