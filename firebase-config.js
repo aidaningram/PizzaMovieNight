@@ -1,10 +1,10 @@
 export const firebaseConfig = {
-  apiKey: "AIzaSyDRC5TEFx5lU_u8P6hCI1B-AlfhTX9HcEw",
-  authDomain: "pizzamovienight.firebaseapp.com",
-  databaseURL: "https://pizzamovienight-default-rtdb.firebaseio.com",
-  projectId: "pizzamovienight",
-  storageBucket: "pizzamovienight.firebasestorage.app",
-  messagingSenderId: "132664486516",
-  appId: "1:132664486516:web:246a1f970f493463193f21",
-  measurementId: "G-ZW2JVHSSV1"
+  apiKey: "AIzaSyC32incQCNZAQ52hxCGa4mzRCpfIuoAsKI",
+  authDomain: "the-pizza-scale.firebaseapp.com",
+  databaseURL: "https://the-pizza-scale-default-rtdb.firebaseio.com",
+  projectId: "the-pizza-scale",
+  storageBucket: "the-pizza-scale.firebasestorage.app",
+  messagingSenderId: "805928480114",
+  appId: "1:805928480114:web:757451897522cf1def01eb",
+  measurementId: "G-DTER8KTXMF"
 };

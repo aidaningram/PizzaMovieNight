@@ -402,7 +402,13 @@ async function loadSharedFamily(familyId) {
   if (!familyId) return null;
 
   const familyRef = services.dbFns.doc(services.db, "families", familyId);
-  const snap = await services.dbFns.getDoc(familyRef);
+  let snap;
+  try {
+    snap = await services.dbFns.getDoc(familyRef);
+  } catch (error) {
+    if (error?.code === "permission-denied") return null;
+    throw error;
+  }
 
   if (!snap.exists()) return null;
 
@@ -439,7 +445,13 @@ async function findSharedFamilyForCurrentUser() {
 
 async function loadLegacyFamily() {
   const legacyRef = services.dbFns.doc(services.db, "families", LEGACY_FAMILY_ID);
-  const legacySnap = await services.dbFns.getDoc(legacyRef);
+  let legacySnap;
+  try {
+    legacySnap = await services.dbFns.getDoc(legacyRef);
+  } catch (error) {
+    if (error?.code === "permission-denied") return null;
+    throw error;
+  }
 
   if (!legacySnap.exists()) return null;
 
@@ -463,6 +475,36 @@ async function ensureLegacyFamilyMembership(familyId) {
     },
     { merge: true }
   );
+}
+
+async function joinPizzaScaleFamily(inviteCode, displayName) {
+  if (!services?.functions || !services?.functionsFns) return null;
+
+  const joinFamilyByInvite = services.functionsFns.httpsCallable(
+    services.functions,
+    "joinFamilyByInvite"
+  );
+  const firstAttempt = await joinFamilyByInvite({
+    inviteCode,
+    displayName,
+    createNewProfile: false
+  });
+  const firstResult = firstAttempt?.data || {};
+
+  if (!firstResult.requiresMemberConfirmation) return firstResult;
+
+  const matchedMembers = Array.isArray(firstResult.matchedMembers) ? firstResult.matchedMembers : [];
+  if (matchedMembers.length !== 1) {
+    throw new Error("That name matches more than one family profile. Join from The Pizza Scale settings first.");
+  }
+
+  const secondAttempt = await joinFamilyByInvite({
+    inviteCode,
+    displayName,
+    claimMemberId: matchedMembers[0].id,
+    createNewProfile: false
+  });
+  return secondAttempt?.data || {};
 }
 
 async function createFallbackSharedFamily(session = {}) {
@@ -648,6 +690,21 @@ function renderLogin(message = "") {
           await services.authFns.updateProfile(credential.user, { displayName });
         }
         currentUser = { uid: credential.user.uid, displayName, email: credential.user.email || email };
+        if (authMode === "signup") {
+          const joinedFamily = await joinPizzaScaleFamily(familyPassword, displayName);
+          if (joinedFamily?.id) {
+            localStorage.setItem(sessionKey, JSON.stringify({
+              uid: credential.user.uid,
+              name: displayName,
+              email,
+              familyAccess: true,
+              familyId: joinedFamily.id
+            }));
+            location.hash = "#/home";
+            await enterFamilySpace(readSession());
+            return;
+          }
+        }
         localStorage.setItem(sessionKey, JSON.stringify({
           uid: credential.user.uid,
           name: displayName,
