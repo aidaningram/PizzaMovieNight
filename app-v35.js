@@ -700,7 +700,7 @@ function renderLogin(message = "") {
     const creating = authMode === "signup";
     nameWrap.hidden = !creating;
     confirmPasswordWrap.hidden = !creating;
-    familyPasswordWrap.hidden = !creating;
+    familyPasswordWrap.hidden = false;
     nameField.required = creating;
     confirmPasswordField.required = creating;
     familyPasswordField.required = creating;
@@ -749,7 +749,7 @@ function renderLogin(message = "") {
       note.textContent = "The account passwords do not match.";
       return;
     }
-    if (authMode === "signup" && familyPassword !== LEGACY_FAMILY_PASSWORD) {
+    if (authMode === "signup" && !isLegacyFamilyPassword(familyPassword)) {
       note.textContent = "That is not the family password.";
       return;
     }
@@ -769,7 +769,11 @@ function renderLogin(message = "") {
           await services.authFns.updateProfile(credential.user, { displayName });
         }
         currentUser = { uid: credential.user.uid, displayName, email: credential.user.email || email };
-        if (authMode === "signup") {
+        if (authMode === "signup" || familyPassword.trim()) {
+          if (!isLegacyFamilyPassword(familyPassword)) {
+            note.textContent = "That is not the family password.";
+            return;
+          }
           const joinedFamily = await joinPizzaScaleFamily(familyPassword, displayName);
           if (joinedFamily?.id) {
             localStorage.setItem(sessionKey, JSON.stringify({
@@ -791,7 +795,15 @@ function renderLogin(message = "") {
           familyAccess: true
         }));
         location.hash = "#/home";
-        await enterFamilySpace(readSession());
+        try {
+          await enterFamilySpace(readSession());
+        } catch (error) {
+          if (isRulesBlockedError(error) && authMode === "signin" && !familyPassword.trim()) {
+            note.textContent = "This account exists, but it has not joined the family yet. Enter the family password and sign in again.";
+            return;
+          }
+          throw error;
+        }
         return;
       }
 
@@ -6187,6 +6199,16 @@ function familyDisplayName(familyProfile = activeFamilyProfile || familyData || 
 
 function familyClearPassword() {
   return familyData?.joinCode || activeFamilyProfile?.familyCode || activeFamilyProfile?.inviteCode || LEGACY_FAMILY_PASSWORD;
+}
+
+function isLegacyFamilyPassword(value) {
+  return String(value || "").trim().replace(/\s+/g, "").toLowerCase() === LEGACY_FAMILY_PASSWORD.toLowerCase();
+}
+
+function isRulesBlockedError(error) {
+  const code = error?.code || "";
+  const message = error?.message || String(error || "");
+  return code.includes("permission-denied") || message.toLowerCase().includes("permission");
 }
 
 function activeMovies() {
