@@ -189,6 +189,7 @@ let currentUser = null;
 let familyData = null;
 let activeFamilyId = LEGACY_FAMILY_ID;
 let activeFamilyProfile = null;
+let activeFamilyMembers = {};
 let unsubscribeFamily = null;
 let unsubscribeGameArena = null;
 let pendingWinner = null;
@@ -350,10 +351,11 @@ async function enterFamilySpace(session) {
   const resolved = await resolveActiveFamily(session);
   activeFamilyId = resolved.familyId;
   activeFamilyProfile = resolved.familyProfile;
+  activeFamilyMembers = await loadPizzaScaleFamilyMembers(activeFamilyId);
   const familyRef = familyStateRef();
 
   unsubscribeFamily = services.dbFns.onSnapshot(familyRef, (nextSnap) => {
-    const nextFamilyData = { ...nextSnap.data(), id: nextSnap.id };
+    const nextFamilyData = hydratePizzaMovieNightFamilyData({ ...nextSnap.data(), id: nextSnap.id });
     const nextSignature = familyRenderSignature(nextFamilyData);
     const shouldRender = nextSignature !== lastFamilyRenderSignature;
     familyData = nextFamilyData;
@@ -364,6 +366,53 @@ async function enterFamilySpace(session) {
   }, (error) => {
     renderLogin(error.message || "Firebase could not load the family wheel.");
   });
+}
+
+async function loadPizzaScaleFamilyMembers(familyId) {
+  if (!familyId) return {};
+
+  try {
+    const membersQuery = services.dbFns.query(
+      services.dbFns.collection(services.db, "familyMembers"),
+      services.dbFns.where("familyId", "==", familyId)
+    );
+    const snapshot = await services.dbFns.getDocs(membersQuery);
+    const members = {};
+
+    snapshot.docs.forEach((memberDoc) => {
+      const member = memberDoc.data() || {};
+      const memberKey = member.userId || member.linkedAccountUserId || memberDoc.id;
+      members[memberKey] = {
+        name: member.firstNameOrNickname || member.displayName || "Family member",
+        email: member.email || "",
+        role: member.role || "",
+        permission: member.permission || "",
+        birthDate: member.birthDate || "",
+        gender: member.gender || "",
+        profileOnly: !member.userId && !member.linkedAccountUserId,
+        linkedAccountUserId: member.linkedAccountUserId || member.userId || "",
+        familyMemberId: memberDoc.id,
+        joinedAt: member.createdAt || Date.now()
+      };
+    });
+
+    return members;
+  } catch (error) {
+    if (error?.code === "permission-denied") return {};
+    throw error;
+  }
+}
+
+function hydratePizzaMovieNightFamilyData(rawData = {}) {
+  return {
+    ...rawData,
+    familyDisplayName: rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
+    name: rawData.name || rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
+    members: {
+      ...activeFamilyMembers,
+      ...(rawData.members || {})
+    }
+  };
 }
 
 async function resolveActiveFamily(session = {}) {
