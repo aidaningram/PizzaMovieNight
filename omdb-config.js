@@ -1,1 +1,1 @@
-export const omdbApiKey = "c24b1a88";
+export const omdbApiKey = "17fda6e5";
