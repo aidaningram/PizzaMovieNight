@@ -1273,7 +1273,7 @@ function renderMovieDetailPage() {
 
   if (!movie) {
     container.innerHTML = `
-      <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
+      <button class="back-button inline-back-button" type="button" aria-label="Go back"><span aria-hidden="true">&larr;</span><span>Back</span></button>
       <div class="empty-state">Pick a movie from search to see details.</div>
     `;
     container.querySelector(".inline-back-button").addEventListener("click", () => history.back());
@@ -1283,7 +1283,7 @@ function renderMovieDetailPage() {
   const reviewLinks = movieReviewLinks({ Title: movie.title, Year: movie.year });
   const poster = movie.poster && movie.poster !== "N/A" ? movie.poster : "";
   container.innerHTML = `
-    <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
+    <button class="back-button inline-back-button" type="button" aria-label="Go back"><span aria-hidden="true">&larr;</span><span>Back</span></button>
     <article class="movie-detail-card">
       ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
       <div class="movie-detail-body">
@@ -1348,7 +1348,7 @@ function renderPizzaScaleGuidePage() {
 
   if (!movie) {
     container.innerHTML = `
-      <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
+      <button class="back-button inline-back-button" type="button" aria-label="Go back"><span aria-hidden="true">&larr;</span><span>Back</span></button>
       <div class="empty-state">Pick a movie first, then open its Pizza Scale guide.</div>
     `;
     container.querySelector(".inline-back-button").addEventListener("click", () => history.back());
@@ -1357,7 +1357,7 @@ function renderPizzaScaleGuidePage() {
 
   const poster = movie.poster && movie.poster !== "N/A" ? movie.poster : "";
   container.innerHTML = `
-    <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
+    <button class="back-button inline-back-button" type="button" aria-label="Go back"><span aria-hidden="true">&larr;</span><span>Back</span></button>
     <article class="pizza-guide-page">
       <section class="movie-detail-card pizza-guide-hero">
         ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}

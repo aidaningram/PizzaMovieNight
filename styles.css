@@ -476,10 +476,33 @@ label {
   min-height: 46px;
   border-radius: 999px;
   background: rgba(43, 38, 56, 0.96);
-  color: var(--ink);
+  color: var(--accent-2);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
   font-size: 2rem;
+  line-height: 1;
+}
+
+.inline-back-button {
+  display: inline-flex;
+  width: auto;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  gap: 8px;
+  padding: 0 16px;
+  margin: 0 0 -2px;
+  color: var(--cream);
+  font-family: var(--brand-font);
+  font-size: 1rem;
+  font-weight: 950;
+  text-decoration: none;
+}
+
+.inline-back-button span:first-child {
+  color: var(--accent-2);
+  font-size: 1.1rem;
   line-height: 1;
 }
 
