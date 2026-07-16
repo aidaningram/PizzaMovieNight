@@ -4,6 +4,7 @@ import { omdbApiKey } from "./omdb-config.js";
 const LEGACY_FAMILY_PASSWORD = "dogcatpig3";
 const LEGACY_FAMILY_ID = "pizza-movie-night";
 const APP_STATE_COLLECTION = "pizzaMovieNightFamilies";
+const PIZZA_SCALE_BASE_URL = "https://thepizzascale.pizza/";
 const FIREBASE_READY = !Object.values(firebaseConfig).some((value) => value.startsWith("PASTE_"));
 const appRoot = document.querySelector("#app");
 const templates = {
@@ -844,6 +845,7 @@ function renderRoute() {
   else if (route === "movie-list") renderMovieListPage();
   else if (route === "search") renderSearchPage();
   else if (route === "movie-detail") renderMovieDetailPage();
+  else if (route === "pizza-scale-guide") renderPizzaScaleGuidePage();
   else if (route === "rankings") renderRankingsPage();
   else if (route === "members") renderMembersPage();
   else if (route === "design-system") renderDesignSystemPage();
@@ -1153,7 +1155,6 @@ function renderSearchResults(movies) {
     item.setAttribute("aria-label", `Open details for ${movie.Title}`);
     const poster = movie.Poster && movie.Poster !== "N/A" ? movie.Poster : "";
     const reviewLinks = movieReviewLinks(movie);
-    const recommendation = recommendationForMovie(movie);
     item.innerHTML = `
       ${poster ? `<img src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
       <div class="search-card-body">
@@ -1163,7 +1164,6 @@ function renderSearchResults(movies) {
           <p>${escapeHtml(movie.Genre && movie.Genre !== "N/A" ? movie.Genre : "")}</p>
         </div>
         <p>${escapeHtml(movie.Plot && movie.Plot !== "N/A" ? movie.Plot : "")}</p>
-        ${recommendation ? recommendationMarkup(recommendation) : ""}
         <div class="review-links">
           <a class="review-link review-link-rt" href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">
             <img src="https://www.google.com/s2/favicons?domain=rottentomatoes.com&sz=64" alt="" loading="lazy" />
@@ -1203,6 +1203,11 @@ function renderSearchResults(movies) {
 function openMovieDetail(movie) {
   sessionStorage.setItem(selectedMovieKey, JSON.stringify(movie));
   navigate("movie-detail");
+}
+
+function openPizzaScaleGuide(movie) {
+  sessionStorage.setItem(selectedMovieKey, JSON.stringify(movie));
+  navigate("pizza-scale-guide");
 }
 
 async function openMovieListDetail(movie) {
@@ -1265,7 +1270,6 @@ function renderMovieDetailPage() {
   }
 
   const reviewLinks = movieReviewLinks({ Title: movie.title, Year: movie.year });
-  const recommendation = recommendationForMovie(movie);
   const poster = movie.poster && movie.poster !== "N/A" ? movie.poster : "";
   container.innerHTML = `
     <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
@@ -1276,7 +1280,6 @@ function renderMovieDetailPage() {
         <h1 class="page-title">${escapeHtml(movie.title)}</h1>
         <p>${escapeHtml(movie.plot && movie.plot !== "N/A" ? movie.plot : "No plot available.")}</p>
         <section id="pizza-scale-summary" class="pizza-scale-summary" hidden></section>
-        ${recommendation ? recommendationMarkup(recommendation) : ""}
         <dl class="movie-facts">
           ${movieFact("Genre", movie.genre)}
           ${movieFact("Actors", movie.actors)}
@@ -1296,6 +1299,7 @@ function renderMovieDetailPage() {
           </a>
         </div>
         <div class="search-actions">
+          <button id="detail-open-guide" class="secondary-action compact-action" type="button">Open Pizza Scale Guide</button>
           <button id="detail-add-list" class="secondary-action compact-action" type="button">Add to Movie List</button>
           <button id="detail-add-wheel" class="primary-action compact-action" type="button" ${canCurrentUserAddMovie() ? "" : "disabled"}>Add to wheel</button>
         </div>
@@ -1303,12 +1307,56 @@ function renderMovieDetailPage() {
     </article>
   `;
   container.querySelector(".inline-back-button").addEventListener("click", () => history.back());
+  document.querySelector("#detail-open-guide").addEventListener("click", () => openPizzaScaleGuide(movie));
   document.querySelector("#detail-add-list").addEventListener("click", () => addSearchMovieToList(movie));
   document.querySelector("#detail-add-wheel").addEventListener("click", async () => {
     await addToWheel(movie);
     navigate("wheel");
   });
   loadPizzaScaleSummary(movie);
+}
+
+function renderPizzaScaleGuidePage() {
+  appRoot.replaceChildren(templates.movieDetail.content.cloneNode(true));
+  renderAppMenu();
+
+  const movie = readSelectedMovie();
+  const container = document.querySelector("#movie-detail-content");
+
+  if (!movie) {
+    container.innerHTML = `
+      <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
+      <div class="empty-state">Pick a movie first, then open its Pizza Scale guide.</div>
+    `;
+    container.querySelector(".inline-back-button").addEventListener("click", () => history.back());
+    return;
+  }
+
+  const poster = movie.poster && movie.poster !== "N/A" ? movie.poster : "";
+  container.innerHTML = `
+    <button class="back-button inline-back-button" type="button" aria-label="Go back">‹</button>
+    <article class="pizza-guide-page">
+      <section class="movie-detail-card pizza-guide-hero">
+        ${poster ? `<img class="movie-detail-poster" src="${escapeHtml(poster)}" alt="" loading="lazy" />` : `<div class="movie-detail-poster poster-placeholder"><img src="assets/pizza-logo.png" alt="" loading="lazy" /></div>`}
+        <div class="movie-detail-body">
+          <p class="eyebrow">Pizza Scale Guide</p>
+          <h1 class="page-title">${escapeHtml(movie.title)}</h1>
+          <p>${escapeHtml([movie.year, movie.rated, movie.runtime].filter(isRealValue).join(" • ") || "Movie details")}</p>
+          <div id="pizza-guide-score-row" class="pizza-guide-score-row"></div>
+          <div class="search-actions pizza-guide-actions">
+            <a id="pizza-scale-review-link" class="primary-action compact-action" href="${escapeHtml(pizzaScaleMovieUrl(movie, true))}" target="_blank" rel="noopener noreferrer">Review on Pizza Scale</a>
+            <a class="secondary-action compact-action" href="${escapeHtml(pizzaScaleMovieUrl(movie))}" target="_blank" rel="noopener noreferrer">Open on Pizza Scale</a>
+          </div>
+        </div>
+      </section>
+      <section id="pizza-guide-content" class="pizza-guide-panel">
+        <div class="empty-state">Loading Pizza Scale guide...</div>
+      </section>
+    </article>
+  `;
+
+  container.querySelector(".inline-back-button").addEventListener("click", () => history.back());
+  loadPizzaScaleGuidePage(movie);
 }
 
 async function loadPizzaScaleSummary(movie) {
@@ -1336,6 +1384,58 @@ async function loadPizzaScaleSummary(movie) {
   }
 }
 
+async function loadPizzaScaleGuidePage(movie) {
+  const content = document.querySelector("#pizza-guide-content");
+  const scoreRow = document.querySelector("#pizza-guide-score-row");
+  const imdbId = movie?.imdbId || movie?.imdbID || movie?.id || "";
+
+  if (!content || !/^tt\d{5,12}$/.test(imdbId)) {
+    if (content) {
+      content.innerHTML = `<div class="empty-state">This movie does not have a valid IMDb id yet, so Pizza Scale data is unavailable.</div>`;
+    }
+    return;
+  }
+
+  try {
+    const summary = await getPizzaScaleMovieData(imdbId);
+    const score = summary.familyReview?.pizzaScore || summary.movie?.pizzaScore;
+    if (scoreRow) scoreRow.innerHTML = pizzaGuideScoreRowMarkup(summary);
+    content.innerHTML = pizzaGuidePanelMarkup(summary.guide, movie.title, Boolean(activeFamilyId), score);
+  } catch (error) {
+    content.innerHTML = `<div class="empty-state">Pizza Scale guide data is unavailable right now.</div>`;
+  }
+}
+
+async function getPizzaScaleMovieData(imdbId) {
+  const summary = await getPizzaScaleCallableSummary(imdbId).catch(() => ({}));
+  const [movieDoc, guideDoc] = await Promise.all([
+    services.dbFns.getDoc(services.dbFns.doc(services.db, "movies", imdbId)).catch(() => null),
+    services.dbFns.getDoc(services.dbFns.doc(services.db, "movieGuides", imdbId)).catch(() => null)
+  ]);
+
+  return {
+    ...summary,
+    movie: {
+      ...(summary.movie || {}),
+      ...(movieDoc?.exists?.() ? normalizePizzaScaleMovie(movieDoc.data()) : {})
+    },
+    guide: guideDoc?.exists?.()
+      ? normalizePizzaScaleGuide(guideDoc.data())
+      : normalizePizzaScaleGuide(summary.guide)
+  };
+}
+
+async function getPizzaScaleCallableSummary(imdbId) {
+  if (!FIREBASE_READY || !services?.functions) return {};
+
+  const getMovieScaleSummary = services.functionsFns.httpsCallable(
+    services.functions,
+    "getMovieScaleSummary"
+  );
+  const result = await getMovieScaleSummary({ imdbId, familyId: activeFamilyId });
+  return result.data || {};
+}
+
 function pizzaScaleSummaryMarkup(summary = {}) {
   const guide = summary.guide || {};
   const movie = summary.movie || {};
@@ -1356,6 +1456,188 @@ function pizzaScaleSummaryMarkup(summary = {}) {
     ${guideSummary}
     ${watchOut}
   `;
+}
+
+function pizzaGuideScoreRowMarkup(summary = {}) {
+  const movie = summary.movie || {};
+  const familyReview = summary.familyReview;
+  const score = familyReview?.pizzaScore || movie.pizzaScore;
+  const reviewCount = Number(movie.reviewCount || 0);
+  return `
+    <div class="pizza-guide-main-score">
+      ${pizzaFillMarkup(score || 0)}
+      <div>
+        <span>Pizza Scale score</span>
+        <strong>${Number.isFinite(Number(score)) ? `${Number(score).toFixed(1)} / 8` : "No score yet"}</strong>
+        <small>${familyReview ? "Your family has rated this movie." : reviewCount ? `${reviewCount} family rating${reviewCount === 1 ? "" : "s"}` : "No family ratings yet"}</small>
+      </div>
+    </div>
+  `;
+}
+
+function pizzaGuidePanelMarkup(guide, movieTitle, canShowFamilyFit, score) {
+  if (!guide) {
+    return `
+      <div class="section-heading-text">
+        <strong>Pizza Scale Guide</strong>
+      </div>
+      <div class="empty-state">
+        <strong>Family guide not created yet</strong>
+        <p>This space will hold Pizza Scale's family-centered movie guide for ${escapeHtml(movieTitle)}.</p>
+      </div>
+    `;
+  }
+
+  const concerns = Object.entries(guide.concernLevels || {})
+    .filter(([, value]) => Number.isFinite(Number(value)));
+
+  return `
+    <div class="section-heading-text">
+      <strong>Pizza Scale Guide</strong>
+    </div>
+    <div class="guide-status-row">
+      <span>${escapeHtml(formatGuideStatus(guide.status))}</span>
+      ${guide.bestAgeRange ? `<span>Best for ${escapeHtml(guide.bestAgeRange)}</span>` : ""}
+    </div>
+    ${guide.summary ? `<p class="guide-summary">${escapeHtml(guide.summary)}</p>` : ""}
+    <div class="guide-score-grid">
+      ${guideScoreMarkup("Family night fit", guide.familyNightFit, !canShowFamilyFit, "Join a family to calculate this.")}
+      ${guideScoreMarkup("Parent appeal", guide.parentAppeal)}
+      ${guideScoreMarkup("Kid appeal", guide.kidAppeal)}
+      ${guideScoreMarkup("Teen appeal", guide.teenAppeal)}
+    </div>
+    ${concerns.length ? `
+      <div class="guide-concerns">
+        ${concerns.map(([key, value]) => `
+          <span class="guide-concern-chip">${escapeHtml(guideConcernLabel(key))}: ${escapeHtml(formatConcernLevel(Number(value)))}</span>
+        `).join("")}
+      </div>
+    ` : ""}
+    ${guideListMarkup("Good for", guide.goodFor, "good")}
+    ${guideListMarkup("May not fit", guide.mayNotFit, "caution")}
+    ${guideListMarkup("Watch out for", guide.watchOutFor, "watch")}
+    ${guideListMarkup("Conversation starters", guide.conversationTopics, "conversation")}
+  `;
+}
+
+function guideScoreMarkup(label, value, isLocked = false, lockedText = "") {
+  const number = Number(value);
+  const hasValue = Number.isFinite(number) && !isLocked;
+  return `
+    <div class="guide-score-card ${isLocked ? "locked" : ""}">
+      <span>${escapeHtml(label)}</span>
+      ${hasValue ? pizzaFillMarkup(number) : `<div class="guide-score-placeholder"></div>`}
+      <strong>${hasValue ? `${number.toFixed(1)} / 8` : "Not ready yet"}</strong>
+      ${isLocked ? `<small>${escapeHtml(lockedText)}</small>` : ""}
+    </div>
+  `;
+}
+
+function guideListMarkup(title, items, variant = "") {
+  if (!Array.isArray(items) || !items.length) return "";
+  return `
+    <div class="guide-list ${escapeHtml(variant)}">
+      <strong>${escapeHtml(title)}</strong>
+      <div>
+        ${items.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function pizzaFillMarkup(value) {
+  const number = Math.max(0, Math.min(8, Number(value) || 0));
+  const fillAngle = (number / 8) * 360;
+  return `
+    <div class="pizza-fill" aria-label="${number.toFixed(1)} out of 8 pizza slices" style="--pizza-fill-angle: ${fillAngle}deg">
+      <span class="single-pizza-base" aria-hidden="true"></span>
+      <span class="single-pizza-fill" aria-hidden="true"></span>
+      <span class="single-pizza-lines" aria-hidden="true"></span>
+    </div>
+  `;
+}
+
+function normalizePizzaScaleMovie(movie = {}) {
+  return {
+    title: movie.title || "",
+    year: movie.year || "",
+    rated: movie.rated || "",
+    runtime: movie.runtime || "",
+    genre: movie.genre || "",
+    posterUrl: movie.posterUrl || "",
+    pizzaScore: numberOrNull(movie.avgPizzaScore ?? movie.pizzaScore),
+    reviewCount: Number(movie.reviewCount || 0)
+  };
+}
+
+function normalizePizzaScaleGuide(guide = null) {
+  if (!guide || guide.status === "empty") return null;
+  return {
+    status: guide.status || "",
+    summary: guide.summary || "",
+    bestAgeRange: guide.bestAgeRange || "",
+    parentAppeal: numberOrNull(guide.parentAppeal),
+    kidAppeal: numberOrNull(guide.kidAppeal),
+    teenAppeal: numberOrNull(guide.teenAppeal),
+    familyNightFit: numberOrNull(guide.familyNightFit),
+    concernLevels: guide.concernLevels || {},
+    goodFor: cleanGuideList(guide.goodFor),
+    mayNotFit: cleanGuideList(guide.mayNotFit),
+    watchOutFor: cleanGuideList(guide.watchOutFor),
+    conversationTopics: cleanGuideList(guide.conversationTopics)
+  };
+}
+
+function cleanGuideList(items) {
+  return Array.isArray(items)
+    ? items.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+}
+
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatGuideStatus(status) {
+  switch (status) {
+    case "verified":
+      return "Verified family guide";
+    case "ai-assisted":
+      return "AI-assisted guide";
+    case "draft":
+      return "Draft guide";
+    default:
+      return "Pizza Scale guide";
+  }
+}
+
+function formatConcernLevel(value) {
+  if (!Number.isFinite(value)) return "Not noted";
+  if (value <= 0) return "None noted";
+  if (value === 1) return "Very mild";
+  if (value === 2) return "Mild";
+  if (value === 3) return "Moderate";
+  return "High";
+}
+
+function guideConcernLabel(key) {
+  return ({
+    scare: "Scary moments",
+    violence: "Violence",
+    language: "Language",
+    romanceNudity: "Romance/nudity",
+    substances: "Substances"
+  })[key] || key;
+}
+
+function pizzaScaleMovieUrl(movie = {}, review = false) {
+  const url = new URL(PIZZA_SCALE_BASE_URL);
+  url.hash = review ? "#/rate-movie" : "#/movie-stats";
+  const imdbId = movie.imdbId || movie.imdbID || movie.id || "";
+  if (imdbId) url.searchParams.set("imdbId", imdbId);
+  if (movie.title) url.searchParams.set("title", movie.title);
+  return url.toString();
 }
 
 function movieFact(label, value) {
@@ -1381,15 +1663,6 @@ function movieReviewLinks(movie) {
     rottenTomatoes: `https://www.rottentomatoes.com/search?search=${encodeURIComponent(query)}`,
     commonSense: `https://www.commonsensemedia.org/search/${encodeURIComponent(query)}`
   };
-}
-
-function recommendationMarkup(recommendation) {
-  return `
-    <div class="recommendation-pill">
-      <strong>${recommendation.label}</strong>
-      <span>${escapeHtml(recommendation.reasons.join(" • "))}</span>
-    </div>
-  `;
 }
 
 function omdbMovieData(movie) {
@@ -6234,135 +6507,6 @@ function averageRating(movie) {
     .filter((score) => Number.isFinite(score) && score > 0);
   if (!scores.length) return 0;
   return scores.reduce((total, score) => total + score, 0) / scores.length;
-}
-
-function recommendationForMovie(movie) {
-  const profile = recommendationProfile();
-  if (!profile.count) return null;
-
-  const reasons = [];
-  let score = 50;
-  score += scoreListMatches(splitList(movie.genre || movie.Genre), profile.genres, reasons, "genre");
-  score += scoreListMatches(splitList(movie.actors || movie.Actors), profile.actors, reasons, "actor");
-  score += scoreListMatches(splitList(movie.director || movie.Director), profile.directors, reasons, "director");
-  score += scoreListMatches(splitList(movie.writer || movie.Writer), profile.writers, reasons, "writer");
-
-  const rated = movie.rated || movie.Rated;
-  if (rated && profile.ratings[rated]) {
-    const ratingScore = preferenceScore(profile.ratings[rated]);
-    score += ratingScore * 5;
-    if (ratingScore > 0.5) reasons.push(`${rated} has worked well`);
-    if (ratingScore < -0.5) reasons.push(`${rated} has been mixed`);
-  }
-
-  const runtime = parseRuntime(movie.runtime || movie.Runtime);
-  if (runtime && profile.runtime.average) {
-    const distance = Math.abs(runtime - profile.runtime.average);
-    if (distance <= 20) {
-      score += 5;
-      reasons.push("runtime fits past favorites");
-    } else if (distance > 55) {
-      score -= 4;
-    }
-  }
-
-  const imdb = Number(movie.imdbRating);
-  if (Number.isFinite(imdb)) {
-    if (imdb >= 7.5) {
-      score += 4;
-      reasons.push("strong IMDb score");
-    } else if (imdb < 5.5) {
-      score -= 5;
-    }
-  }
-
-  if (profile.favorites.some((favorite) => sameMovie(favorite, movie))) {
-    score += 8;
-    reasons.push("similar to a family favorite");
-  }
-
-  const bounded = Math.max(0, Math.min(100, Math.round(score)));
-  if (bounded < 58 && !reasons.length) return null;
-  return {
-    score: bounded,
-    label: `${bounded}% family fit`,
-    reasons: reasons.slice(0, 3)
-  };
-}
-
-function recommendationProfile() {
-  const profile = {
-    count: 0,
-    genres: {},
-    actors: {},
-    directors: {},
-    writers: {},
-    ratings: {},
-    runtime: { total: 0, count: 0, average: 0 },
-    favorites: []
-  };
-
-  historyMovies().forEach((movie) => {
-    const average = averageRating(movie);
-    if (!average) return;
-    profile.count += 1;
-    const weight = average - 3;
-    addPreference(profile.genres, splitList(movie.genre), weight);
-    addPreference(profile.actors, splitList(movie.actors), weight * 0.8);
-    addPreference(profile.directors, splitList(movie.director), weight);
-    addPreference(profile.writers, splitList(movie.writer), weight * 0.7);
-    addPreference(profile.ratings, [movie.rated], weight * 0.6);
-    const runtime = parseRuntime(movie.runtime);
-    if (runtime && average >= 4) {
-      profile.runtime.total += runtime;
-      profile.runtime.count += 1;
-    }
-    if (average >= 4.25) profile.favorites.push(movie);
-  });
-
-  profile.runtime.average = profile.runtime.count ? profile.runtime.total / profile.runtime.count : 0;
-  return profile;
-}
-
-function addPreference(bucket, values, weight) {
-  values.filter(isRealValue).forEach((value) => {
-    bucket[value] = bucket[value] || { total: 0, count: 0 };
-    bucket[value].total += weight;
-    bucket[value].count += 1;
-  });
-}
-
-function scoreListMatches(values, bucket, reasons, label) {
-  return values.reduce((total, value) => {
-    const preference = bucket[value];
-    if (!preference) return total;
-    const itemScore = preferenceScore(preference);
-    if (itemScore > 0.65 && reasons.length < 3) reasons.push(`liked ${label}: ${value}`);
-    return total + itemScore * 7;
-  }, 0);
-}
-
-function preferenceScore(preference) {
-  return preference.total / Math.max(1, preference.count);
-}
-
-function splitList(value = "") {
-  return String(value)
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function parseRuntime(value = "") {
-  const match = String(value).match(/\d+/);
-  return match ? Number(match[0]) : 0;
-}
-
-function sameMovie(a, b) {
-  if (a.imdbID && b.imdbID) return a.imdbID === b.imdbID;
-  const aTitle = String(a.title || a.Title || "").toLowerCase();
-  const bTitle = String(b.title || b.Title || "").toLowerCase();
-  return aTitle && aTitle === bTitle;
 }
 
 function starText(score) {
