@@ -29,5 +29,20 @@ service cloud.firestore {
     match /pizzaMovieNightFamilies/{familyId} {
       allow read, write: if isSignedIn();
     }
+
+    match /movies/{movieId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /movieGuides/{movieId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /watchProviders/{movieId} {
+      allow read: if true;
+      allow write: if false;
+    }
   }
 }

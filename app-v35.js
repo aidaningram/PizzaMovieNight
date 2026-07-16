@@ -36,6 +36,11 @@ const genreSearchSeeds = {
   Mystery: ["murder", "secret", "detective", "missing"],
   "Sci-Fi": ["space", "future", "alien", "robot"]
 };
+const knownPizzaScaleMovieIds = {
+  "kiki's delivery service": "tt0097814",
+  "spider-man: into the spider-verse": "tt4633694",
+  "the princess bride": "tt0093779"
+};
 const SPIN_DURATION_MS = 9000;
 const SPIN_LEAD_MS = 1400;
 const POINTER_ANGLE = Math.PI * 1.5;
@@ -1238,6 +1243,7 @@ async function openMovieListDetail(movie) {
 function movieListDetailFallback(movie) {
   return {
     title: movie.title,
+    imdbID: movie.imdbID || movie.imdbId || knownPizzaScaleMovieIds[normalizeMovieTitle(movie.title)] || "",
     year: movie.year || "",
     rated: movie.rated || "",
     genre: movie.genre || "",
@@ -1568,6 +1574,10 @@ function normalizePizzaScaleMovie(movie = {}) {
     pizzaScore: numberOrNull(movie.avgPizzaScore ?? movie.pizzaScore),
     reviewCount: Number(movie.reviewCount || 0)
   };
+}
+
+function normalizeMovieTitle(title = "") {
+  return String(title).trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function normalizePizzaScaleGuide(guide = null) {
@@ -6419,9 +6429,9 @@ function defaultFamilyData(familyId = activeFamilyId || LEGACY_FAMILY_ID, family
     spinState: null,
     gameArena: defaultGameState(),
     movieList: [
-      { id: crypto.randomUUID(), title: "Spider-Man: Into the Spider-Verse", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 5000 },
-      { id: crypto.randomUUID(), title: "The Princess Bride", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 4000 },
-      { id: crypto.randomUUID(), title: "Kiki's Delivery Service", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 3000 }
+      { id: crypto.randomUUID(), imdbID: "tt4633694", title: "Spider-Man: Into the Spider-Verse", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 5000 },
+      { id: crypto.randomUUID(), imdbID: "tt0093779", title: "The Princess Bride", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 4000 },
+      { id: crypto.randomUUID(), imdbID: "tt0097814", title: "Kiki's Delivery Service", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 3000 }
     ],
     history: [],
     createdAt: Date.now(),
