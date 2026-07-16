@@ -1299,6 +1299,17 @@ function renderMovieDetailPage() {
           ${movieFact("IMDb", movie.imdbRating && movie.imdbRating !== "N/A" ? `${movie.imdbRating}/10` : "")}
           ${movieFact("Awards", movie.awards)}
         </dl>
+        <section id="where-to-watch" class="where-to-watch" aria-label="Where to watch ${escapeHtml(movie.title)}">
+          <button id="watch-summary" class="watch-summary" type="button" disabled aria-expanded="false">
+            <span class="watch-title">Where to watch</span>
+            <span id="watch-provider-strip" class="watch-provider-strip" aria-label="Checking watch availability">
+              <span class="watch-loading">Checking...</span>
+            </span>
+            <span id="watch-chevron" class="watch-chevron" aria-hidden="true">⌄</span>
+          </button>
+          <div id="watch-details" class="watch-details" hidden></div>
+          <p id="watch-note" class="watch-note" hidden></p>
+        </section>
         <div class="review-links">
           <a class="review-link review-link-rt" href="${reviewLinks.rottenTomatoes}" target="_blank" rel="noopener noreferrer">
             <img src="https://www.google.com/s2/favicons?domain=rottentomatoes.com&sz=64" alt="" loading="lazy" />
@@ -1325,6 +1336,7 @@ function renderMovieDetailPage() {
     navigate("wheel");
   });
   loadPizzaScaleSummary(movie);
+  loadWatchProviders(movie);
 }
 
 function renderPizzaScaleGuidePage() {
@@ -1393,6 +1405,188 @@ async function loadPizzaScaleSummary(movie) {
   } catch {
     panel.hidden = true;
   }
+}
+
+async function loadWatchProviders(movie) {
+  const section = document.querySelector("#where-to-watch");
+  const summaryButton = document.querySelector("#watch-summary");
+  const strip = document.querySelector("#watch-provider-strip");
+  const details = document.querySelector("#watch-details");
+  const note = document.querySelector("#watch-note");
+  const chevron = document.querySelector("#watch-chevron");
+  const imdbId = movie?.imdbId || movie?.imdbID || movie?.id || "";
+
+  if (!section || !summaryButton || !strip || !details || !note) return;
+
+  const setUnavailable = (message) => {
+    strip.innerHTML = `<span class="watch-unavailable">Unavailable</span>`;
+    details.hidden = true;
+    details.innerHTML = "";
+    note.hidden = !message;
+    note.textContent = message || "";
+    summaryButton.disabled = true;
+    summaryButton.setAttribute("aria-expanded", "false");
+    if (chevron) chevron.hidden = true;
+  };
+
+  if (!/^tt\d{5,12}$/.test(imdbId) || !FIREBASE_READY || !services?.functions) {
+    setUnavailable("Watch availability is unavailable for this movie.");
+    return;
+  }
+
+  try {
+    const getWatchProviders = services.functionsFns.httpsCallable(
+      services.functions,
+      "getWatchProviders"
+    );
+    const result = await getWatchProviders({
+      imdbId,
+      title: movie.title,
+      year: movie.year,
+      region: "US"
+    });
+    const providers = normalizeWatchProviderGroups(result.data?.providers);
+    const providerCount = getProviderCount(providers);
+
+    if (!providerCount) {
+      setUnavailable(getWatchProviderMessage(result.data) || "Watch availability is unavailable for this movie right now.");
+      return;
+    }
+
+    const iconProviders = getUniqueWatchProviders(providers).slice(0, 8);
+    strip.setAttribute("aria-label", `${providerCount} watch option${providerCount === 1 ? "" : "s"} available`);
+    strip.innerHTML = iconProviders.map(watchProviderIconMarkup).join("");
+    details.innerHTML = `
+      ${watchProviderGroupMarkup("Stream", providers.stream)}
+      ${watchProviderGroupMarkup("Rent", providers.rent)}
+      ${watchProviderGroupMarkup("Buy", providers.buy)}
+    `;
+    note.hidden = true;
+    note.textContent = "";
+    summaryButton.disabled = false;
+    if (chevron) chevron.hidden = false;
+
+    summaryButton.addEventListener("click", () => {
+      const expanded = details.hidden;
+      details.hidden = !expanded;
+      summaryButton.setAttribute("aria-expanded", String(expanded));
+      if (chevron) chevron.classList.toggle("expanded", expanded);
+    });
+  } catch (error) {
+    setUnavailable(getWatchProviderErrorMessage(error));
+  }
+}
+
+function emptyWatchProviderGroups() {
+  return {
+    stream: [],
+    rent: [],
+    buy: []
+  };
+}
+
+function normalizeWatchProviderGroups(value) {
+  const groups = emptyWatchProviderGroups();
+
+  return Object.fromEntries(
+    Object.keys(groups).map((key) => [
+      key,
+      Array.isArray(value?.[key])
+        ? value[key]
+          .map((provider) => ({
+            id: String(provider?.id || provider?.name || "").trim(),
+            name: String(provider?.name || "").trim(),
+            logoUrl: String(provider?.logoUrl || "").trim(),
+            webUrl: String(provider?.webUrl || "").trim()
+          }))
+          .filter((provider) => provider.name && !isIndirectWatchProvider(provider))
+          .slice(0, 12)
+        : []
+    ])
+  );
+}
+
+function isIndirectWatchProvider(provider) {
+  return /\(\s*via\b/i.test(String(provider?.name || ""));
+}
+
+function getProviderCount(groups) {
+  return Object.values(groups || {}).reduce(
+    (total, providers) => total + (Array.isArray(providers) ? providers.length : 0),
+    0
+  );
+}
+
+function getUniqueWatchProviders(groups) {
+  const providers = [];
+  const seen = new Set();
+
+  Object.values(groups || {}).forEach((groupProviders) => {
+    if (!Array.isArray(groupProviders)) return;
+
+    groupProviders.forEach((provider) => {
+      const key = provider.id || provider.name;
+      if (!key || seen.has(key)) return;
+
+      seen.add(key);
+      providers.push(provider);
+    });
+  });
+
+  return providers;
+}
+
+function watchProviderIconMarkup(provider) {
+  return `
+    <span class="watch-provider-icon" title="${escapeHtml(provider.name)}">
+      ${provider.logoUrl
+        ? `<img src="${escapeHtml(provider.logoUrl)}" alt="" loading="lazy" />`
+        : `<span>${escapeHtml(getProviderInitials(provider.name))}</span>`}
+    </span>
+  `;
+}
+
+function watchProviderGroupMarkup(title, providers) {
+  if (!providers.length) return "";
+
+  return `
+    <div class="watch-provider-group">
+      <strong>${escapeHtml(title)}</strong>
+      <div>
+        ${providers.map((provider) => {
+          const content = `${watchProviderIconMarkup(provider)}${escapeHtml(provider.name)}`;
+          return provider.webUrl
+            ? `<a href="${escapeHtml(provider.webUrl)}" target="_blank" rel="noopener noreferrer">${content}</a>`
+            : `<span>${content}</span>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function getProviderInitials(name) {
+  return String(name || "?")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
+
+function getWatchProviderMessage(data) {
+  if (data?.reason === "quota-or-key") return "Watch availability is temporarily unavailable.";
+  if (data?.reason === "not-found") return "Watch availability is unavailable for this movie.";
+  if (data?.status === "unavailable") return "Watch availability is unavailable right now.";
+  return "";
+}
+
+function getWatchProviderErrorMessage(error) {
+  const message = String(error?.message || "");
+  if (/quota|key|permission|unauthenticated|resource-exhausted/i.test(message)) {
+    return "Watch availability is temporarily unavailable.";
+  }
+  return "Watch availability is unavailable right now.";
 }
 
 async function loadPizzaScaleGuidePage(movie) {
