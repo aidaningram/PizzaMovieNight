@@ -1709,7 +1709,7 @@ function pizzaGuidePanelMarkup(guide, movieTitle, canShowFamilyFit, score) {
     </div>
     ${guide.summary ? `<p class="guide-summary">${escapeHtml(guide.summary)}</p>` : ""}
     <div class="guide-score-grid">
-      ${guideScoreMarkup("Family night fit", guide.familyNightFit, !canShowFamilyFit, "Join a family to calculate this.")}
+      ${guideScoreMarkup("Family Fit", guide.familyNightFit, !canShowFamilyFit, "Join a family to calculate your personalized fit.")}
       ${guideScoreMarkup("Parent appeal", guide.parentAppeal)}
       ${guideScoreMarkup("Kid appeal", guide.kidAppeal)}
       ${guideScoreMarkup("Teen appeal", guide.teenAppeal)}
