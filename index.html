@@ -105,8 +105,12 @@
         </section>
 
         <section id="spin-status" class="spin-status" hidden></section>
+        <section id="suspended-movies-panel" class="suspended-movies-panel" hidden></section>
 
-        <button id="open-clear-wheel" class="secondary-action clear-wheel-trigger" type="button">Clear Wheel</button>
+        <div class="wheel-actions-row">
+          <button id="open-suspend-petition" class="secondary-action compact-action suspend-petition-trigger" type="button" hidden>Suspend for one spin</button>
+          <button id="open-clear-wheel" class="secondary-action clear-wheel-trigger" type="button">Clear Wheel</button>
+        </div>
 
         <section id="winner-panel" class="winner-panel" hidden>
           <p class="eyebrow">Tonight's pick</p>
@@ -257,7 +261,7 @@
       </main>
     </template>
 
-    <template id="members-template">
+    <template id="settings-template">
       <main class="page">
         <header class="page-header">
           <div class="family-title">The Ingram Family</div>
@@ -265,12 +269,55 @@
         </header>
 
         <section class="panel form-stack">
-          <p class="eyebrow">Family group</p>
-          <h1 class="page-title">Members</h1>
-          <p class="helper-text">Remove old test accounts so only current family members are counted for spin readiness.</p>
+          <p class="eyebrow">Pizza settings</p>
+          <h1 class="page-title">Settings</h1>
+          <p class="helper-text">Manage your account, family wheel, and app preferences.</p>
         </section>
 
-        <section id="members-list" class="movie-list"></section>
+        <section class="settings-shell">
+          <nav class="settings-tabs" aria-label="Settings sections">
+            <button class="active" type="button" data-settings-tab="account">Account</button>
+            <button type="button" data-settings-tab="family">Family</button>
+            <button type="button" data-settings-tab="general">General</button>
+          </nav>
+
+          <section id="settings-account" class="settings-panel panel form-stack">
+            <p class="eyebrow">Account</p>
+            <h2>Your account</h2>
+            <form id="account-settings-form" class="form-stack">
+              <label>
+                Display name
+                <input id="account-display-name" maxlength="32" autocomplete="name" />
+              </label>
+              <button id="save-account-settings" class="primary-action" type="submit" disabled>Save account settings</button>
+              <p id="account-settings-note" class="helper-text" aria-live="polite"></p>
+            </form>
+          </section>
+
+          <section id="settings-family" class="settings-panel panel form-stack" hidden>
+            <p class="eyebrow">Family</p>
+            <h2>Family wheel</h2>
+            <p class="helper-text">Manage who counts for movie night and decide when the wheel is closed for new picks.</p>
+            <div class="settings-control-row">
+              <div>
+                <strong>Wheel status</strong>
+                <p id="wheel-lock-status" class="helper-text"></p>
+              </div>
+              <button id="toggle-wheel-lock" class="secondary-action compact-action" type="button"></button>
+            </div>
+            <section id="members-list" class="movie-list"></section>
+          </section>
+
+          <section id="settings-general" class="settings-panel panel form-stack" hidden>
+            <p class="eyebrow">General</p>
+            <h2>Audio</h2>
+            <label class="range-setting">
+              Game sound effects
+              <input id="game-volume-slider" type="range" min="0" max="100" step="1" />
+              <span id="game-volume-value" class="helper-text"></span>
+            </label>
+          </section>
+        </section>
       </main>
     </template>
 
@@ -436,6 +483,6 @@
     </template>
 
     <script type="module" src="firebase-config.js"></script>
-    <script type="module" src="app-v35.js?v=member-remove-modal-1"></script>
+    <script type="module" src="app-v35.js?v=settings-suspension-1"></script>
   </body>
 </html>

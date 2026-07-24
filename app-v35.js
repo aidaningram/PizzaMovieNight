@@ -17,13 +17,15 @@ const templates = {
   search: document.querySelector("#search-template"),
   movieDetail: document.querySelector("#movie-detail-template"),
   rankings: document.querySelector("#rankings-template"),
-  members: document.querySelector("#members-template"),
+  settings: document.querySelector("#settings-template"),
   designSystem: document.querySelector("#design-system-template"),
   game: document.querySelector("#game-template")
 };
 const colors = ["#ef463e", "#ffc94d", "#ff8b4d", "#fff0a6", "#f7b267", "#d83c35", "#f7e8c9", "#341735"];
 const sessionKey = "pizzaMovieSession";
 const dismissedRankingsKey = "pizzaMovieDismissedRankings";
+const dismissedSuspensionNoticeKey = "pizzaMovieDismissedSuspensionNotice";
+const gameVolumeKey = "pizzaMovieGameVolume";
 const selectedMovieKey = "pizzaMovieSelectedMovie";
 const OMDB_READY = Boolean(omdbApiKey && !omdbApiKey.startsWith("PASTE_"));
 const genreSearchSeeds = {
@@ -424,21 +426,24 @@ function hydratePizzaMovieNightFamilyData(rawData = {}) {
     appMembers,
     familyDisplayName: rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
     name: rawData.name || rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
-    members: mergeVisibleFamilyMembers(appMembers, activeFamilyMembers)
+    members: mergeVisibleFamilyMembers(appMembers, activeFamilyMembers, rawData.hiddenMemberIds || [])
   };
 }
 
-function mergeVisibleFamilyMembers(appMembers = {}, sharedMembers = {}) {
+function mergeVisibleFamilyMembers(appMembers = {}, sharedMembers = {}, hiddenMemberIds = []) {
   const merged = {};
   const claimedNames = new Set();
+  const hidden = new Set(hiddenMemberIds || []);
 
   Object.entries(sharedMembers).forEach(([uid, member]) => {
+    if (hidden.has(uid) || hidden.has(member.familyMemberId) || hidden.has(member.linkedAccountUserId)) return;
     merged[uid] = member;
     const nameKey = memberNameKey(member);
     if (nameKey) claimedNames.add(nameKey);
   });
 
   Object.entries(appMembers).forEach(([uid, member]) => {
+    if (hidden.has(uid) || hidden.has(member.familyMemberId) || hidden.has(member.linkedAccountUserId)) return;
     if (!memberHasAccount(member)) return;
     const nameKey = memberNameKey(member);
     if (nameKey && claimedNames.has(nameKey) && !sharedMembers[uid]) return;
@@ -860,12 +865,14 @@ function renderRoute() {
   else if (route === "movie-detail") renderMovieDetailPage();
   else if (route === "pizza-scale-guide") renderPizzaScaleGuidePage();
   else if (route === "rankings") renderRankingsPage();
-  else if (route === "members") renderMembersPage();
+  else if (route === "members") navigate("settings");
+  else if (route === "settings") renderSettingsPage();
   else if (route === "design-system") renderDesignSystemPage();
   else if (route === "game") renderGamePage();
   else renderHomePage();
   resetViewportPosition();
   if (route !== "game") window.setTimeout(showPendingRankingPrompt, 0);
+  if (route !== "game") window.setTimeout(showPendingSuspensionPrompt, 0);
 }
 
 function renderHomePage() {
@@ -892,14 +899,18 @@ function renderWheelPage() {
   document.querySelector("#confirm-picked").addEventListener("click", confirmPicked);
   document.querySelector("#go-add-button").addEventListener("click", () => navigate("add"));
   document.querySelector("#open-clear-wheel").addEventListener("click", showClearWheelOverlay);
+  document.querySelector("#open-suspend-petition").addEventListener("click", showSuspendPetitionIntro);
 
   const empty = activeMovies().length === 0;
+  const wheelHasMovies = allWheelMovies().length > 0;
   const canAdd = canCurrentUserAddMovie();
   const spinActive = isSpinActive();
   const addPanel = document.querySelector("#empty-wheel-panel");
   const clearButton = document.querySelector("#open-clear-wheel");
+  const suspendButton = document.querySelector("#open-suspend-petition");
   document.querySelector("#spin-button").hidden = empty;
-  clearButton.hidden = empty;
+  clearButton.hidden = !wheelHasMovies;
+  suspendButton.hidden = empty || !wheelIsClosed() || spinActive || Boolean(familyData?.suspensionPetition);
   clearButton.disabled = spinActive;
   addPanel.hidden = !canAdd || spinActive;
   if (canAdd) {
@@ -908,6 +919,7 @@ function renderWheelPage() {
       ? "Add picks for the next pizza movie night."
       : "You can add one movie to this wheel.";
   }
+  renderSuspendedMoviesPanel();
   updateSpinUi();
   const currentWheelSignature = wheelMovieSignature();
   const shouldAnimateWheelChange = Boolean(
@@ -1964,14 +1976,200 @@ function renderRankingsList() {
   }));
 }
 
-function renderMembersPage() {
-  appRoot.replaceChildren(templates.members.content.cloneNode(true));
+function renderSettingsPage() {
+  appRoot.replaceChildren(templates.settings.content.cloneNode(true));
   renderAppMenu();
+  setupSettingsTabs();
+  setupAccountSettings();
+  setupFamilySettings();
+  setupGeneralSettings();
+}
+
+function setupSettingsTabs() {
+  const buttons = [...document.querySelectorAll("[data-settings-tab]")];
+  const panels = {
+    account: document.querySelector("#settings-account"),
+    family: document.querySelector("#settings-family"),
+    general: document.querySelector("#settings-general")
+  };
+
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const activeTab = button.dataset.settingsTab;
+      buttons.forEach((item) => item.classList.toggle("active", item === button));
+      Object.entries(panels).forEach(([key, panel]) => {
+        if (panel) panel.hidden = key !== activeTab;
+      });
+    });
+  });
+}
+
+function setupAccountSettings() {
+  const form = document.querySelector("#account-settings-form");
+  const input = document.querySelector("#account-display-name");
+  const button = document.querySelector("#save-account-settings");
+  const note = document.querySelector("#account-settings-note");
+  if (!form || !input || !button || !note) return;
+
+  input.value = displayName();
+  const syncButton = () => {
+    button.disabled = input.value.trim() === displayName() || !input.value.trim();
+  };
+  input.addEventListener("input", syncButton);
+  syncButton();
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const nextName = input.value.trim();
+    if (!nextName || nextName === displayName()) return;
+    button.disabled = true;
+    note.textContent = "Saving...";
+    try {
+      await saveAccountDisplayName(nextName);
+      note.textContent = "Your name was updated.";
+      input.value = nextName;
+      syncButton();
+    } catch (error) {
+      note.textContent = friendlyAuthError(error);
+      button.disabled = false;
+    }
+  });
+}
+
+function setupFamilySettings() {
   renderMembersList();
+  renderWheelLockSettings();
+}
+
+function setupGeneralSettings() {
+  const slider = document.querySelector("#game-volume-slider");
+  const value = document.querySelector("#game-volume-value");
+  if (!slider || !value) return;
+  const sync = () => {
+    const volume = Number(slider.value) / 100;
+    saveGameVolume(volume);
+    value.textContent = `${Math.round(volume * 100)}%`;
+  };
+  slider.value = String(Math.round(gameSoundMasterVolume() * 100));
+  value.textContent = `${slider.value}%`;
+  slider.addEventListener("input", sync);
+}
+
+function renderWheelLockSettings() {
+  const status = document.querySelector("#wheel-lock-status");
+  const button = document.querySelector("#toggle-wheel-lock");
+  if (!status || !button) return;
+  const locked = wheelIsClosed();
+  status.textContent = locked
+    ? "The wheel is full. No one can add more movies until the wheel is cleared or reopened."
+    : "The wheel is open. Family members can still add their movie for this spin.";
+  button.textContent = locked ? "Reopen wheel" : "Set wheel as full";
+  button.classList.toggle("danger-action", locked);
+  button.classList.toggle("secondary-action", !locked);
+  button.addEventListener("click", () => toggleWheelLock(!locked));
+}
+
+async function toggleWheelLock(locked) {
+  await saveFamily({
+    wheelLocked: locked,
+    spinReady: locked ? spinReady() : {},
+    updatedAt: Date.now()
+  });
+}
+
+async function saveAccountDisplayName(nextName) {
+  const previousName = displayName();
+  if (FIREBASE_READY && services?.authFns && services?.auth?.currentUser) {
+    await services.authFns.updateProfile(services.auth.currentUser, { displayName: nextName });
+  }
+
+  currentUser = { ...(currentUser || {}), displayName: nextName };
+  const session = readSession();
+  if (session) localStorage.setItem(sessionKey, JSON.stringify({ ...session, name: nextName }));
+
+  const members = { ...(familyData?.appMembers || familyData?.members || {}) };
+  if (currentUser?.uid && members[currentUser.uid]) {
+    members[currentUser.uid] = { ...members[currentUser.uid], name: nextName };
+  }
+
+  if (FIREBASE_READY && services?.dbFns) {
+    await saveSharedAccountDisplayName(nextName, members);
+  } else {
+    await saveFamily({ members });
+  }
+
+  activeFamilyMembers = renameVisibleSharedMember(activeFamilyMembers, currentUser?.uid, previousName, nextName);
+  familyData = hydratePizzaMovieNightFamilyData({
+    ...familyData,
+    members,
+    appMembers: members
+  });
+  renderAppMenu();
+}
+
+async function saveSharedAccountDisplayName(nextName, members) {
+  await services.dbFns.setDoc(familyStateRef(), {
+    members,
+    updatedAt: services.dbFns.serverTimestamp()
+  }, { merge: true });
+
+  if (activeFamilyId && currentUser?.uid) {
+    await services.dbFns.setDoc(
+      services.dbFns.doc(services.db, "userProfiles", currentUser.uid),
+      {
+        firstName: nextName,
+        displayName: nextName,
+        updatedAt: services.dbFns.serverTimestamp()
+      },
+      { merge: true }
+    );
+
+    const optionalWrites = [
+      services.dbFns.setDoc(
+        services.dbFns.doc(services.db, "families", activeFamilyId),
+        {
+          members: {
+            [currentUser.uid]: memberRecord(nextName)
+          },
+          updatedAt: services.dbFns.serverTimestamp()
+        },
+        { merge: true }
+      )
+    ];
+
+    const memberDocId = activeFamilyMembers?.[currentUser.uid]?.familyMemberId;
+    if (memberDocId) {
+      optionalWrites.push(services.dbFns.setDoc(
+        services.dbFns.doc(services.db, "familyMembers", memberDocId),
+        {
+          firstNameOrNickname: nextName,
+          displayName: nextName,
+          updatedAt: services.dbFns.serverTimestamp()
+        },
+        { merge: true }
+      ));
+    }
+
+    await Promise.allSettled(optionalWrites);
+  }
+}
+
+function renameVisibleSharedMember(members = {}, uid, previousName, nextName) {
+  if (!uid) return members;
+  const nextMembers = { ...members };
+  if (nextMembers[uid]) {
+    nextMembers[uid] = { ...nextMembers[uid], name: nextName };
+    return nextMembers;
+  }
+  const previousKey = String(previousName || "").trim().toLowerCase();
+  const match = Object.entries(nextMembers).find(([, member]) => String(member.name || "").trim().toLowerCase() === previousKey);
+  if (match) nextMembers[match[0]] = { ...match[1], name: nextName };
+  return nextMembers;
 }
 
 function renderMembersList() {
   const container = document.querySelector("#members-list");
+  if (!container) return;
   const members = Object.entries(familyData?.members || {});
   if (!members.length) {
     container.innerHTML = `<div class="empty-state">No members are saved yet.</div>`;
@@ -3033,7 +3231,16 @@ function gameSoundSourceForEvent(event = {}) {
 }
 
 function gameSoundVolumeForEvent(event = {}) {
-  return GAME_SOUND_VOLUMES[event.type] ?? 0.6;
+  return (GAME_SOUND_VOLUMES[event.type] ?? 0.6) * gameSoundMasterVolume();
+}
+
+function gameSoundMasterVolume() {
+  const stored = Number(localStorage.getItem(gameVolumeKey));
+  return Number.isFinite(stored) ? Math.max(0, Math.min(1, stored)) : 0.85;
+}
+
+function saveGameVolume(volume) {
+  localStorage.setItem(gameVolumeKey, String(Math.max(0, Math.min(1, volume))));
 }
 
 function randomGamePizzaDeathSound() {
@@ -3137,7 +3344,7 @@ async function testGameSound() {
     }
     let played = false;
     const scheduled = runWhenGameAudioReady(() => {
-      const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.collect, buffer, { volume: 1 });
+      const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.collect, buffer, { volume: gameSoundMasterVolume() });
       played = Boolean(playing);
     });
     if (!scheduled) {
@@ -3237,7 +3444,7 @@ function startGameBasilSound(ownerUid = "unknown", createdAt = Date.now()) {
     runWhenGameAudioReady(() => {
       const playing = playGameSoundBuffer(GAME_SOUND_ASSETS.basil, buffer, {
         loop: true,
-        volume: 0.42,
+        volume: 0.42 * gameSoundMasterVolume(),
         offset: elapsed
       });
       if (!playing) return;
@@ -5966,7 +6173,7 @@ async function addToWheel({ title, sourceListId = null, ...details }) {
     createdAt: Date.now()
   };
   const patch = {
-    movies: [...activeMovies(), movie],
+    movies: [...allWheelMovies(), movie],
     spinReady: {},
     spinState: null,
     roundPicks: {
@@ -6012,15 +6219,20 @@ async function removeFamilyMember(uid) {
   const confirmed = await showRemoveMemberConfirm(memberName);
   if (!confirmed) return;
   const members = { ...(familyData.appMembers || {}) };
+  const hiddenMemberIds = new Set(familyData.hiddenMemberIds || []);
   const ready = { ...spinReady() };
   const picks = { ...roundPicks() };
   delete members[uid];
+  hiddenMemberIds.add(uid);
+  if (member.familyMemberId) hiddenMemberIds.add(member.familyMemberId);
+  if (member.linkedAccountUserId) hiddenMemberIds.add(member.linkedAccountUserId);
   delete ready[uid];
   delete picks[uid];
-  await saveFamily({ members, spinReady: ready, roundPicks: picks });
+  await saveFamily({ members, hiddenMemberIds: [...hiddenMemberIds], spinReady: ready, roundPicks: picks });
   familyData = hydratePizzaMovieNightFamilyData({
     ...familyData,
     members,
+    hiddenMemberIds: [...hiddenMemberIds],
     spinReady: ready,
     roundPicks: picks
   });
@@ -6388,6 +6600,283 @@ function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
   });
 }
 
+function renderSuspendedMoviesPanel() {
+  const panel = document.querySelector("#suspended-movies-panel");
+  if (!panel) return;
+  const suspended = suspendedMovies();
+  panel.hidden = !suspended.length;
+  if (!suspended.length) {
+    panel.innerHTML = "";
+    return;
+  }
+  panel.innerHTML = `
+    <strong>Suspended from the next spin</strong>
+    <p>${escapeHtml(suspended.map((movie) => movie.title).join(", "))}</p>
+  `;
+}
+
+function suspendedMovies() {
+  const suspended = new Set(suspendedMovieIds());
+  return allWheelMovies().filter((movie) => suspended.has(movie.id));
+}
+
+function showSuspendPetitionIntro() {
+  if (!wheelIsClosed() || !activeMovies().length || document.querySelector(".suspend-petition-modal")) return;
+  showAppConfirm({
+    title: "Create a suspension petition?",
+    message: "This asks everyone in the family if one or more movies should sit out for the next wheel spin.",
+    confirmText: "Choose movies",
+    cancelText: "Not now"
+  }).then((confirmed) => {
+    if (confirmed) showSuspendMoviePicker();
+  });
+}
+
+function showSuspendMoviePicker() {
+  if (document.querySelector(".suspend-petition-modal")) return;
+  const movies = activeMovies();
+  const overlay = document.createElement("section");
+  overlay.className = "ranking-modal suspend-petition-modal";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "suspend-picker-title");
+  overlay.innerHTML = `
+    <form class="ranking-modal-card suspend-petition-card">
+      <p class="eyebrow">One spin only</p>
+      <h2 id="suspend-picker-title">Which movies should sit out?</h2>
+      <p class="helper-text">Pick one or more movies. Your vote counts as the first yes.</p>
+      <div class="suspend-movie-list">
+        ${movies.map((movie) => `
+          <label class="suspend-movie-choice">
+            <input type="checkbox" value="${escapeHtml(movie.id)}" />
+            <span>
+              <strong>${escapeHtml(movie.title)}</strong>
+              <small>Suggested by ${escapeHtml(movie.suggestedBy || "someone")}</small>
+            </span>
+          </label>
+        `).join("")}
+      </div>
+      <p id="suspend-picker-note" class="helper-text" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button class="secondary-action" type="button" data-suspend-cancel>Cancel</button>
+        <button class="primary-action" type="submit">Send petition</button>
+      </div>
+    </form>
+  `;
+  const close = () => overlay.remove();
+  overlay.querySelector("[data-suspend-cancel]").addEventListener("click", close);
+  overlay.querySelector("form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const selectedIds = [...overlay.querySelectorAll("input:checked")].map((input) => input.value);
+    const note = overlay.querySelector("#suspend-picker-note");
+    if (!selectedIds.length) {
+      note.textContent = "Choose at least one movie.";
+      return;
+    }
+    if (selectedIds.length >= movies.length) {
+      note.textContent = "Leave at least one movie on the wheel.";
+      return;
+    }
+    await createSuspensionPetition(selectedIds);
+    close();
+  });
+  document.body.append(overlay);
+}
+
+async function createSuspensionPetition(movieIds) {
+  const movieTitles = allWheelMovies()
+    .filter((movie) => movieIds.includes(movie.id))
+    .map((movie) => movie.title);
+  const petition = {
+    id: crypto.randomUUID(),
+    createdAt: Date.now(),
+    createdByUid: currentUser.uid,
+    createdByName: displayName(),
+    movieIds,
+    movieTitles,
+    accepts: { [currentUser.uid]: true },
+    declines: {}
+  };
+  await saveFamily({ suspensionPetition: petition, suspensionNotice: null });
+  await maybeCompleteSuspensionPetition(petition);
+}
+
+function showPendingSuspensionPrompt() {
+  if (!currentUser?.uid) return;
+  const petition = familyData?.suspensionPetition;
+  const existingVoteModal = document.querySelector(".suspension-vote-modal");
+  if (existingVoteModal && petition?.id) {
+    updateSuspensionVoteProgress(existingVoteModal, petition);
+    return;
+  }
+  if (existingVoteModal) existingVoteModal.remove();
+  if (petition?.id && petition.createdByUid !== currentUser.uid && !petition.accepts?.[currentUser.uid] && !petition.declines?.[currentUser.uid]) {
+    showSuspensionVoteModal(petition);
+    return;
+  }
+
+  const notice = familyData?.suspensionNotice;
+  if (!notice?.id || notice.creatorUid !== currentUser.uid || notice.status !== "declined") return;
+  if (sessionStorage.getItem(dismissedSuspensionNoticeKey) === notice.id) return;
+  showSuspensionDeclinedModal(notice);
+}
+
+function updateSuspensionVoteProgress(overlay, petition) {
+  const progress = overlay.querySelector(".petition-progress");
+  if (!progress) return;
+  progress.textContent = `${Object.keys(petition.accepts || {}).length} of ${spinParticipantIds().length} accepted`;
+}
+
+function showSuspensionVoteModal(petition) {
+  const overlay = document.createElement("section");
+  overlay.className = "ranking-modal suspension-vote-modal";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "suspension-vote-title");
+  const acceptedCount = Object.keys(petition.accepts || {}).length;
+  const totalCount = spinParticipantIds().length;
+  overlay.innerHTML = `
+    <div class="ranking-modal-card suspension-vote-card">
+      <p class="eyebrow">Movie night vote</p>
+      <h2 id="suspension-vote-title">${escapeHtml(petition.createdByName || "Someone")} wants to suspend a movie</h2>
+      <p class="helper-text">${escapeHtml((petition.movieTitles || []).join(", "))}</p>
+      <div class="petition-progress">${acceptedCount} of ${totalCount} accepted</div>
+      <div class="modal-actions">
+        <button class="secondary-action" type="button" data-vote-decline>Decline</button>
+        <button class="primary-action" type="button" data-vote-accept>Accept</button>
+      </div>
+    </div>
+  `;
+  overlay.querySelector("[data-vote-decline]").addEventListener("click", async () => {
+    overlay.remove();
+    await declineSuspensionPetition(petition);
+  });
+  overlay.querySelector("[data-vote-accept]").addEventListener("click", async () => {
+    overlay.remove();
+    await acceptSuspensionPetition(petition);
+  });
+  document.body.append(overlay);
+}
+
+function showSuspensionDeclinedModal(notice) {
+  const overlay = document.createElement("section");
+  overlay.className = "ranking-modal suspension-vote-modal";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "suspension-declined-title");
+  overlay.innerHTML = `
+    <div class="ranking-modal-card suspension-vote-card">
+      <button class="modal-close-x" type="button" aria-label="Close">×</button>
+      <p class="eyebrow">Petition declined</p>
+      <h2 id="suspension-declined-title">The movie will stay on the wheel</h2>
+      <p class="helper-text">Someone declined the petition to suspend ${escapeHtml((notice.movieTitles || []).join(", "))}.</p>
+    </div>
+  `;
+  overlay.querySelector(".modal-close-x").addEventListener("click", () => {
+    sessionStorage.setItem(dismissedSuspensionNoticeKey, notice.id);
+    overlay.remove();
+  });
+  document.body.append(overlay);
+}
+
+async function acceptSuspensionPetition(petition) {
+  if (!petition?.id || !currentUser?.uid) return;
+  if (FIREBASE_READY && services?.dbFns) {
+    await services.dbFns.runTransaction(services.db, async (transaction) => {
+      const ref = familyStateRef();
+      const snap = await transaction.get(ref);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const currentPetition = data.suspensionPetition;
+      if (currentPetition?.id !== petition.id) return;
+      const accepts = { ...(currentPetition.accepts || {}), [currentUser.uid]: true };
+      const participants = Object.keys(data.members || {});
+      const acceptedByEveryone = participants.length > 0 && participants.every((uid) => accepts[uid]);
+      if (acceptedByEveryone) {
+        transaction.update(ref, {
+          suspendedMovieIds: [...new Set([...(data.suspendedMovieIds || []), ...(currentPetition.movieIds || [])])],
+          suspensionPetition: null,
+          suspensionNotice: {
+            id: currentPetition.id,
+            status: "accepted",
+            creatorUid: currentPetition.createdByUid,
+            movieTitles: currentPetition.movieTitles || [],
+            acceptedAt: Date.now()
+          },
+          spinReady: {},
+          updatedAt: services.dbFns.serverTimestamp()
+        });
+        return;
+      }
+      transaction.update(ref, {
+        suspensionPetition: { ...currentPetition, accepts },
+        updatedAt: services.dbFns.serverTimestamp()
+      });
+    });
+    return;
+  }
+  const nextPetition = {
+    ...petition,
+    accepts: { ...(petition.accepts || {}), [currentUser.uid]: true }
+  };
+  await saveFamily({ suspensionPetition: nextPetition });
+  await maybeCompleteSuspensionPetition(nextPetition);
+}
+
+async function declineSuspensionPetition(petition) {
+  if (!petition?.id || !currentUser?.uid) return;
+  if (FIREBASE_READY && services?.dbFns) {
+    await services.dbFns.runTransaction(services.db, async (transaction) => {
+      const ref = familyStateRef();
+      const snap = await transaction.get(ref);
+      if (!snap.exists()) return;
+      const currentPetition = snap.data().suspensionPetition;
+      if (currentPetition?.id !== petition.id) return;
+      transaction.update(ref, {
+        suspensionPetition: null,
+        suspensionNotice: {
+          id: currentPetition.id,
+          status: "declined",
+          creatorUid: currentPetition.createdByUid,
+          movieTitles: currentPetition.movieTitles || [],
+          declinedAt: Date.now()
+        },
+        updatedAt: services.dbFns.serverTimestamp()
+      });
+    });
+    return;
+  }
+  await saveFamily({
+    suspensionPetition: null,
+    suspensionNotice: {
+      id: petition.id,
+      status: "declined",
+      creatorUid: petition.createdByUid,
+      movieTitles: petition.movieTitles || [],
+      declinedAt: Date.now()
+    }
+  });
+}
+
+async function maybeCompleteSuspensionPetition(petition) {
+  const participants = spinParticipantIds();
+  if (!petition?.id || !participants.length) return;
+  const acceptedByEveryone = participants.every((uid) => petition.accepts?.[uid]);
+  if (!acceptedByEveryone) return;
+  await saveFamily({
+    suspendedMovieIds: [...new Set([...suspendedMovieIds(), ...(petition.movieIds || [])])],
+    suspensionPetition: null,
+    suspensionNotice: {
+      id: petition.id,
+      status: "accepted",
+      creatorUid: petition.createdByUid,
+      movieTitles: petition.movieTitles || [],
+      acceptedAt: Date.now()
+    },
+    spinReady: {}
+  });
+}
+
 function spinWheel() {
   requestSpin();
 }
@@ -6436,7 +6925,8 @@ async function requestSpinTransaction() {
     if (!snap.exists()) return;
 
     const data = snap.data();
-    const movies = data.movies || [];
+    const suspended = new Set(Array.isArray(data.suspendedMovieIds) ? data.suspendedMovieIds : []);
+    const movies = (data.movies || []).filter((movie) => !suspended.has(movie.id));
     const members = Object.keys(data.members || {});
     const participants = members.length ? members : [currentUser.uid];
     const ready = { ...(data.spinReady || {}) };
@@ -6573,19 +7063,20 @@ function showWinner(movie) {
 async function confirmPicked() {
   if (!pendingWinner) return;
   const picked = { ...pendingWinner, pickedAt: Date.now(), round: familyData.round || 1, rankings: {} };
-  const movies = activeMovies().filter((movie) => movie.id !== pendingWinner.id);
+  const movies = allWheelMovies().filter((movie) => movie.id !== pendingWinner.id);
   const history = [...(familyData.history || []), picked];
-  const patch = { movies, history, spinReady: {}, spinState: null };
+  const patch = { movies, history, spinReady: {}, spinState: null, suspendedMovieIds: [], suspensionPetition: null };
   if (movies.length === 0) {
     patch.roundPicks = {};
     patch.round = (familyData.round || 1) + 1;
+    patch.wheelLocked = false;
   }
   pendingWinner = null;
   await saveFamily(patch);
 }
 
 function showClearWheelOverlay() {
-  if (!activeMovies().length || document.querySelector(".clear-wheel-modal")) return;
+  if (!allWheelMovies().length || document.querySelector(".clear-wheel-modal")) return;
   const overlay = document.createElement("section");
   overlay.className = "ranking-modal clear-wheel-modal";
   overlay.setAttribute("role", "dialog");
@@ -6641,6 +7132,9 @@ async function clearWheel() {
     roundPicks: {},
     spinReady: {},
     spinState: null,
+    wheelLocked: false,
+    suspendedMovieIds: [],
+    suspensionPetition: null,
     round: (familyData.round || 1) + 1
   };
   await saveFamily(patch);
@@ -6739,10 +7233,15 @@ function defaultFamilyData(familyId = activeFamilyId || LEGACY_FAMILY_ID, family
     joinCode: LEGACY_FAMILY_PASSWORD,
     round: 1,
     members: {},
+    hiddenMemberIds: [],
     movies: [],
     roundPicks: {},
     spinReady: {},
     spinState: null,
+    wheelLocked: false,
+    suspendedMovieIds: [],
+    suspensionPetition: null,
+    suspensionNotice: null,
     gameArena: defaultGameState(),
     movieList: [
       { id: crypto.randomUUID(), imdbID: "tt4633694", title: "Spider-Man: Into the Spider-Verse", suggestedBy: "Family", suggestedByUid: "seed", createdAt: Date.now() - 5000 },
@@ -6775,9 +7274,9 @@ function upsertMember() {
   demoStore.write(familyData);
 }
 
-function memberRecord() {
+function memberRecord(name = displayName()) {
   return {
-    name: displayName(),
+    name,
     email: currentUser?.email || readSession()?.email || "",
     joinedAt: Date.now()
   };
@@ -6811,7 +7310,16 @@ function isRulesBlockedError(error) {
 }
 
 function activeMovies() {
+  const suspended = new Set(suspendedMovieIds());
+  return allWheelMovies().filter((movie) => !suspended.has(movie.id));
+}
+
+function allWheelMovies() {
   return familyData?.movies || [];
+}
+
+function suspendedMovieIds() {
+  return Array.isArray(familyData?.suspendedMovieIds) ? familyData.suspendedMovieIds : [];
 }
 
 function historyMovies() {
@@ -6956,7 +7464,16 @@ function userHasSubmittedThisRound() {
 }
 
 function canCurrentUserAddMovie() {
-  return !userHasSubmittedThisRound();
+  return !wheelIsClosed() && !userHasSubmittedThisRound();
+}
+
+function wheelIsClosed() {
+  return Boolean(familyData?.wheelLocked) || wheelIsNaturallyFull();
+}
+
+function wheelIsNaturallyFull() {
+  const participants = spinParticipantIds();
+  return participants.length > 0 && participants.every((uid) => roundPicks()[uid]);
 }
 
 function movieList() {
@@ -7034,7 +7551,7 @@ function renderAppMenu() {
         <button type="button" data-menu-route="search">Find Movies</button>
         <button type="button" data-menu-route="rankings">Rankings</button>
         <button type="button" data-menu-route="game">Pizza Arena</button>
-        <button type="button" data-menu-route="members">Members</button>
+        <button type="button" data-menu-route="settings">Settings</button>
         <button type="button" data-menu-action="logout">Log out</button>
       </nav>
     </div>
