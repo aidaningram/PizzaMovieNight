@@ -383,6 +383,7 @@ label {
 
 .primary-action,
 .secondary-action,
+.danger-action,
 .remove-button {
   display: inline-flex;
   align-items: center;
@@ -406,6 +407,13 @@ label {
   background: rgba(255, 250, 240, 0.9);
   color: var(--ink);
   border: 1px solid var(--line);
+}
+
+.danger-action {
+  background: #ffe0d9;
+  color: var(--danger);
+  border: 1px solid rgba(255, 122, 122, 0.45);
+  box-shadow: inset 0 -4px 0 rgba(239, 70, 62, 0.18), var(--shadow);
 }
 
 .text-action {
@@ -1668,6 +1676,36 @@ label {
   border-radius: 18px;
   background: rgba(255, 250, 240, 0.98);
   box-shadow: var(--shadow);
+}
+
+.remove-member-card {
+  justify-items: center;
+  text-align: center;
+  border-color: rgba(255, 122, 122, 0.35);
+}
+
+.remove-member-card .helper-text {
+  text-align: center;
+}
+
+.remove-member-card .modal-actions {
+  width: 100%;
+}
+
+.remove-member-icon {
+  display: grid;
+  width: 74px;
+  height: 74px;
+  place-items: center;
+  border-radius: 22px;
+  background: var(--plum);
+  box-shadow: var(--shadow);
+}
+
+.remove-member-icon img {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
 }
 
 .star-picker {

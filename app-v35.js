@@ -6009,12 +6009,7 @@ async function removeFamilyMember(uid) {
   if (uid === currentUser?.uid) return;
   const member = familyData?.members?.[uid] || familyData?.appMembers?.[uid] || {};
   const memberName = member.name || member.email || "this member";
-  const confirmed = await showAppConfirm({
-    title: `Remove ${memberName}?`,
-    message: "This removes the saved Pizza app member entry and clears their spin readiness for the current round.",
-    confirmText: "Remove member",
-    cancelText: "Keep member"
-  });
+  const confirmed = await showRemoveMemberConfirm(memberName);
   if (!confirmed) return;
   const members = { ...(familyData.appMembers || {}) };
   const ready = { ...spinReady() };
@@ -6679,6 +6674,47 @@ function showAppConfirm({ title, message, confirmText = "Confirm", cancelText = 
     overlay.querySelector("[data-confirm-submit]").addEventListener("click", () => finish(true));
     document.body.append(overlay);
     overlay.querySelector("[data-confirm-cancel]").focus();
+  });
+}
+
+function showRemoveMemberConfirm(memberName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("section");
+    const previousOverflow = document.body.style.overflow;
+    overlay.className = "ranking-modal remove-member-modal";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-labelledby", "remove-member-title");
+    overlay.innerHTML = `
+      <div class="ranking-modal-card remove-member-card">
+        <div class="remove-member-icon" aria-hidden="true">
+          <img src="assets/pizza-logo.png" alt="" />
+        </div>
+        <p class="eyebrow">Family member</p>
+        <h2 id="remove-member-title">Remove ${escapeHtml(memberName)}?</h2>
+        <p class="helper-text">
+          This removes the saved Pizza app member entry and clears their spin readiness for the
+          current round.
+        </p>
+        <div class="modal-actions">
+          <button class="secondary-action" type="button" data-remove-cancel>Keep member</button>
+          <button class="danger-action" type="button" data-remove-submit>Remove member</button>
+        </div>
+      </div>
+    `;
+    const finish = (value) => {
+      document.body.style.overflow = previousOverflow;
+      overlay.remove();
+      resolve(value);
+    };
+    overlay.addEventListener("mousedown", (event) => {
+      if (event.target === overlay) finish(false);
+    });
+    overlay.querySelector("[data-remove-cancel]").addEventListener("click", () => finish(false));
+    overlay.querySelector("[data-remove-submit]").addEventListener("click", () => finish(true));
+    document.body.append(overlay);
+    document.body.style.overflow = "hidden";
+    overlay.querySelector("[data-remove-cancel]").focus();
   });
 }
 
