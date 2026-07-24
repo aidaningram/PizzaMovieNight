@@ -898,20 +898,15 @@ function renderWheelPage() {
   document.querySelector("#spin-button").addEventListener("click", requestSpin);
   document.querySelector("#confirm-picked").addEventListener("click", confirmPicked);
   document.querySelector("#go-add-button").addEventListener("click", () => navigate("add"));
-  document.querySelector("#open-clear-wheel").addEventListener("click", showClearWheelOverlay);
   document.querySelector("#open-suspend-petition").addEventListener("click", showSuspendPetitionIntro);
 
   const empty = activeMovies().length === 0;
-  const wheelHasMovies = allWheelMovies().length > 0;
   const canAdd = canCurrentUserAddMovie();
   const spinActive = isSpinActive();
   const addPanel = document.querySelector("#empty-wheel-panel");
-  const clearButton = document.querySelector("#open-clear-wheel");
   const suspendButton = document.querySelector("#open-suspend-petition");
   document.querySelector("#spin-button").hidden = empty;
-  clearButton.hidden = !wheelHasMovies;
   suspendButton.hidden = empty || !wheelIsClosed() || spinActive || Boolean(familyData?.suspensionPetition);
-  clearButton.disabled = spinActive;
   addPanel.hidden = !canAdd || spinActive;
   if (canAdd) {
     addPanel.querySelector("h2").textContent = empty ? "The wheel is empty." : "Add your movie.";
@@ -2038,10 +2033,10 @@ function setupAccountSettings() {
 
 function setupFamilySettings() {
   renderMembersList();
-  renderWheelLockSettings();
 }
 
 function setupGeneralSettings() {
+  renderWheelSettings();
   const slider = document.querySelector("#game-volume-slider");
   const value = document.querySelector("#game-volume-value");
   if (!slider || !value) return;
@@ -2053,6 +2048,11 @@ function setupGeneralSettings() {
   slider.value = String(Math.round(gameSoundMasterVolume() * 100));
   value.textContent = `${slider.value}%`;
   slider.addEventListener("input", sync);
+}
+
+function renderWheelSettings() {
+  renderWheelLockSettings();
+  renderClearWheelSettings();
 }
 
 function renderWheelLockSettings() {
@@ -2075,6 +2075,19 @@ async function toggleWheelLock(locked) {
     spinReady: locked ? spinReady() : {},
     updatedAt: Date.now()
   });
+}
+
+function renderClearWheelSettings() {
+  const status = document.querySelector("#clear-wheel-settings-status");
+  const button = document.querySelector("#open-clear-wheel");
+  if (!status || !button) return;
+  const hasMovies = allWheelMovies().length > 0;
+  const spinActive = isSpinActive();
+  status.textContent = hasMovies
+    ? "Clear every movie from the current wheel and start a fresh round."
+    : "The wheel is already empty.";
+  button.disabled = !hasMovies || spinActive;
+  button.addEventListener("click", showClearWheelOverlay);
 }
 
 async function saveAccountDisplayName(nextName) {
@@ -7139,7 +7152,7 @@ async function clearWheel() {
   };
   await saveFamily(patch);
   familyData = { ...familyData, ...patch };
-  renderWheelPage();
+  renderRoute();
 }
 
 function showAppConfirm({ title, message, confirmText = "Confirm", cancelText = "Cancel" }) {
