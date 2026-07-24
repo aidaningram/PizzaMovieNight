@@ -417,11 +417,14 @@ async function loadPizzaScaleFamilyMembers(familyId) {
 }
 
 function hydratePizzaMovieNightFamilyData(rawData = {}) {
+  const appMembers = rawData.members || {};
+
   return {
     ...rawData,
+    appMembers,
     familyDisplayName: rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
     name: rawData.name || rawData.familyDisplayName || familyDisplayName(activeFamilyProfile),
-    members: mergeVisibleFamilyMembers(rawData.members || {}, activeFamilyMembers)
+    members: mergeVisibleFamilyMembers(appMembers, activeFamilyMembers)
   };
 }
 
@@ -6004,14 +6007,29 @@ async function removeRankingMovie(movieId) {
 
 async function removeFamilyMember(uid) {
   if (uid === currentUser?.uid) return;
-  if (!window.confirm("Are you sure you want to remove this member?")) return;
-  const members = { ...(familyData.members || {}) };
+  const member = familyData?.members?.[uid] || familyData?.appMembers?.[uid] || {};
+  const memberName = member.name || member.email || "this member";
+  const confirmed = await showAppConfirm({
+    title: `Remove ${memberName}?`,
+    message: "This removes the saved Pizza app member entry and clears their spin readiness for the current round.",
+    confirmText: "Remove member",
+    cancelText: "Keep member"
+  });
+  if (!confirmed) return;
+  const members = { ...(familyData.appMembers || {}) };
   const ready = { ...spinReady() };
   const picks = { ...roundPicks() };
   delete members[uid];
   delete ready[uid];
   delete picks[uid];
   await saveFamily({ members, spinReady: ready, roundPicks: picks });
+  familyData = hydratePizzaMovieNightFamilyData({
+    ...familyData,
+    members,
+    spinReady: ready,
+    roundPicks: picks
+  });
+  renderMembersList();
 }
 
 async function removeFromMovieList(movieId) {
