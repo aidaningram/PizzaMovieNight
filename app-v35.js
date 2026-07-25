@@ -431,26 +431,63 @@ function hydratePizzaMovieNightFamilyData(rawData = {}) {
 }
 
 function mergeVisibleFamilyMembers(appMembers = {}, sharedMembers = {}, hiddenMemberIds = []) {
+  const candidates = [];
   const merged = {};
+  const usedEmailKeys = new Set();
+  const usedLinkedKeys = new Set();
+  const usedNameKeys = new Set();
   const claimedNames = new Set();
   const hidden = new Set(hiddenMemberIds || []);
 
   Object.entries(sharedMembers).forEach(([uid, member]) => {
     if (hidden.has(uid) || hidden.has(member.familyMemberId) || hidden.has(member.linkedAccountUserId)) return;
-    merged[uid] = member;
-    const nameKey = memberNameKey(member);
-    if (nameKey) claimedNames.add(nameKey);
+    if (!memberHasAccount(member)) return;
+    candidates.push({ uid, member, source: "shared" });
   });
 
   Object.entries(appMembers).forEach(([uid, member]) => {
     if (hidden.has(uid) || hidden.has(member.familyMemberId) || hidden.has(member.linkedAccountUserId)) return;
     if (!memberHasAccount(member)) return;
-    const nameKey = memberNameKey(member);
-    if (nameKey && claimedNames.has(nameKey) && !sharedMembers[uid]) return;
-    merged[uid] = member;
+    candidates.push({ uid, member, source: "app" });
   });
 
+  candidates
+    .sort((a, b) => memberCandidateScore(b) - memberCandidateScore(a))
+    .forEach(({ uid, member }) => {
+      const emailKey = memberEmailKey(member);
+      const linkedKey = memberLinkedKey(uid, member);
+      const nameKey = memberNameKey(member);
+      if (emailKey && usedEmailKeys.has(emailKey)) return;
+      if (linkedKey && usedLinkedKeys.has(linkedKey)) return;
+      if (!emailKey && !linkedKey && nameKey && usedNameKeys.has(nameKey)) return;
+      merged[uid] = member;
+      if (emailKey) usedEmailKeys.add(emailKey);
+      if (linkedKey) usedLinkedKeys.add(linkedKey);
+      if (nameKey) {
+        claimedNames.add(nameKey);
+        usedNameKeys.add(nameKey);
+      }
+    });
+
   return merged;
+}
+
+function memberCandidateScore({ uid, member, source }) {
+  let score = 0;
+  if (uid === currentUser?.uid) score += 1000;
+  if (source === "app") score += 80;
+  if (member.linkedAccountUserId && uid === member.linkedAccountUserId) score += 40;
+  if (member.email) score += 20;
+  if (!member.profileOnly) score += 10;
+  return score;
+}
+
+function memberEmailKey(member = {}) {
+  return String(member.email || "").trim().toLowerCase();
+}
+
+function memberLinkedKey(uid, member = {}) {
+  return String(member.linkedAccountUserId || member.userId || member.uid || uid || "").trim();
 }
 
 function memberHasAccount(member = {}) {
@@ -873,6 +910,7 @@ function renderRoute() {
   resetViewportPosition();
   if (route !== "game") window.setTimeout(showPendingRankingPrompt, 0);
   if (route !== "game") window.setTimeout(showPendingSuspensionPrompt, 0);
+  if (route !== "game") window.setTimeout(() => reconcileSharedWheelState().catch(() => {}), 0);
 }
 
 function renderHomePage() {
@@ -6737,7 +6775,8 @@ function showPendingSuspensionPrompt() {
 function updateSuspensionVoteProgress(overlay, petition) {
   const progress = overlay.querySelector(".petition-progress");
   if (!progress) return;
-  progress.textContent = `${Object.keys(petition.accepts || {}).length} of ${spinParticipantIds().length} accepted`;
+  const participants = spinParticipantIds();
+  progress.textContent = `${Object.keys(pruneMemberMap(petition.accepts || {}, participants)).length} of ${participants.length} accepted`;
 }
 
 function showSuspensionVoteModal(petition) {
@@ -6746,8 +6785,9 @@ function showSuspensionVoteModal(petition) {
   overlay.setAttribute("role", "dialog");
   overlay.setAttribute("aria-modal", "true");
   overlay.setAttribute("aria-labelledby", "suspension-vote-title");
-  const acceptedCount = Object.keys(petition.accepts || {}).length;
-  const totalCount = spinParticipantIds().length;
+  const participants = spinParticipantIds();
+  const acceptedCount = Object.keys(pruneMemberMap(petition.accepts || {}, participants)).length;
+  const totalCount = participants.length;
   overlay.innerHTML = `
     <div class="ranking-modal-card suspension-vote-card">
       <p class="eyebrow">Movie night vote</p>
@@ -6802,8 +6842,8 @@ async function acceptSuspensionPetition(petition) {
       const data = snap.data();
       const currentPetition = data.suspensionPetition;
       if (currentPetition?.id !== petition.id) return;
-      const accepts = { ...(currentPetition.accepts || {}), [currentUser.uid]: true };
-      const participants = Object.keys(data.members || {});
+      const participants = participantIdsForFamilyData(data);
+      const accepts = pruneMemberMap({ ...(currentPetition.accepts || {}), [currentUser.uid]: true }, participants);
       const acceptedByEveryone = participants.length > 0 && participants.every((uid) => accepts[uid]);
       if (acceptedByEveryone) {
         transaction.update(ref, {
@@ -6874,7 +6914,8 @@ async function declineSuspensionPetition(petition) {
 async function maybeCompleteSuspensionPetition(petition) {
   const participants = spinParticipantIds();
   if (!petition?.id || !participants.length) return;
-  const acceptedByEveryone = participants.every((uid) => petition.accepts?.[uid]);
+  const accepts = pruneMemberMap(petition.accepts || {}, participants);
+  const acceptedByEveryone = participants.every((uid) => accepts[uid]);
   if (!acceptedByEveryone) return;
   await saveFamily({
     suspendedMovieIds: [...new Set([...suspendedMovieIds(), ...(petition.movieIds || [])])],
@@ -6887,6 +6928,118 @@ async function maybeCompleteSuspensionPetition(petition) {
       acceptedAt: Date.now()
     },
     spinReady: {}
+  });
+}
+
+async function reconcileSharedWheelState() {
+  if (!currentUser?.uid || !familyData) return;
+  if (FIREBASE_READY && services?.dbFns) {
+    await reconcileSharedWheelStateTransaction();
+    return;
+  }
+  const participants = spinParticipantIds();
+  if (!participants.length) return;
+
+  const petition = familyData.suspensionPetition;
+  if (petition?.id) {
+    const accepts = pruneMemberMap(petition.accepts || {}, participants);
+    if (participants.every((uid) => accepts[uid])) {
+      await maybeCompleteSuspensionPetition({ ...petition, accepts });
+      return;
+    }
+  }
+
+  const ready = pruneMemberMap(spinReady(), participants);
+  const readyChanged = JSON.stringify(ready) !== JSON.stringify(spinReady());
+  if (!activeMovies().length || isSpinActive()) {
+    if (readyChanged) await saveFamily({ spinReady: ready });
+    return;
+  }
+
+  if (participants.every((uid) => ready[uid]) && !familyData?.spinState?.id) {
+    await saveFamily({
+      spinReady: ready,
+      spinState: {
+        id: crypto.randomUUID(),
+        startedAt: Date.now() + SPIN_LEAD_MS,
+        duration: SPIN_DURATION_MS,
+        finalRotation: randomFinalRotation(),
+        movieIds: activeMovies().map((movie) => movie.id)
+      }
+    });
+    return;
+  }
+
+  if (readyChanged) await saveFamily({ spinReady: ready });
+}
+
+async function reconcileSharedWheelStateTransaction() {
+  const familyRef = familyStateRef();
+  await services.dbFns.runTransaction(services.db, async (transaction) => {
+    const snap = await transaction.get(familyRef);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const participants = participantIdsForFamilyData(data);
+    if (!participants.length) return;
+
+    const petition = data.suspensionPetition;
+    if (petition?.id) {
+      const accepts = pruneMemberMap(petition.accepts || {}, participants);
+      if (participants.every((uid) => accepts[uid])) {
+        transaction.update(familyRef, {
+          suspendedMovieIds: [...new Set([...(data.suspendedMovieIds || []), ...(petition.movieIds || [])])],
+          suspensionPetition: null,
+          suspensionNotice: {
+            id: petition.id,
+            status: "accepted",
+            creatorUid: petition.createdByUid,
+            movieTitles: petition.movieTitles || [],
+            acceptedAt: Date.now()
+          },
+          spinReady: {},
+          updatedAt: services.dbFns.serverTimestamp()
+        });
+        return;
+      }
+    }
+
+    const ready = pruneMemberMap(data.spinReady || {}, participants);
+    const readyChanged = JSON.stringify(ready) !== JSON.stringify(data.spinReady || {});
+    const suspended = new Set(Array.isArray(data.suspendedMovieIds) ? data.suspendedMovieIds : []);
+    const movies = (data.movies || []).filter((movie) => !suspended.has(movie.id));
+    const spin = data.spinState;
+
+    if (!movies.length || remoteSpinIsActive(spin)) {
+      if (readyChanged) {
+        transaction.update(familyRef, {
+          spinReady: ready,
+          updatedAt: services.dbFns.serverTimestamp()
+        });
+      }
+      return;
+    }
+
+    if (participants.every((uid) => ready[uid]) && !spin?.id) {
+      transaction.update(familyRef, {
+        spinReady: ready,
+        spinState: {
+          id: crypto.randomUUID(),
+          startedAt: Date.now() + SPIN_LEAD_MS,
+          duration: SPIN_DURATION_MS,
+          finalRotation: randomFinalRotation(),
+          movieIds: movies.map((movie) => movie.id)
+        },
+        updatedAt: services.dbFns.serverTimestamp()
+      });
+      return;
+    }
+
+    if (readyChanged) {
+      transaction.update(familyRef, {
+        spinReady: ready,
+        updatedAt: services.dbFns.serverTimestamp()
+      });
+    }
   });
 }
 
@@ -6903,9 +7056,7 @@ async function requestSpin() {
     return;
   }
 
-  const ready = {
-    ...spinReady(),
-  };
+  const ready = pruneMemberMap(spinReady());
 
   if (ready[currentUser.uid]) {
     if (everyoneReady(ready)) return;
@@ -6940,16 +7091,30 @@ async function requestSpinTransaction() {
     const data = snap.data();
     const suspended = new Set(Array.isArray(data.suspendedMovieIds) ? data.suspendedMovieIds : []);
     const movies = (data.movies || []).filter((movie) => !suspended.has(movie.id));
-    const members = Object.keys(data.members || {});
-    const participants = members.length ? members : [currentUser.uid];
-    const ready = { ...(data.spinReady || {}) };
+    const participants = participantIdsForFamilyData(data);
+    const ready = pruneMemberMap(data.spinReady || {}, participants);
     const spin = data.spinState;
 
     if (!movies.length || !currentUser?.uid || remoteSpinIsActive(spin)) return;
 
     const allReady = participants.length > 0 && participants.every((uid) => ready[uid]);
     if (ready[currentUser.uid]) {
-      if (allReady) return;
+      if (allReady) {
+        if (spin?.id) return;
+        const finalRotation = randomFinalRotation();
+        transaction.update(familyRef, {
+          spinReady: ready,
+          spinState: {
+            id: crypto.randomUUID(),
+            startedAt: Date.now() + SPIN_LEAD_MS,
+            duration: SPIN_DURATION_MS,
+            finalRotation,
+            movieIds: movies.map((movie) => movie.id)
+          },
+          updatedAt: services.dbFns.serverTimestamp()
+        });
+        return;
+      }
       delete ready[currentUser.uid];
       transaction.update(familyRef, {
         spinReady: ready,
@@ -7440,12 +7605,26 @@ function spinReady() {
 }
 
 function familyMemberIds() {
-  return Object.keys(familyData?.members || {});
+  return participantIdsForFamilyData(familyData);
+}
+
+function participantIdsForFamilyData(data = familyData) {
+  const hydrated = hydratePizzaMovieNightFamilyData(data || {});
+  const members = Object.entries(hydrated.members || {})
+    .filter(([, member]) => memberHasAccount(member))
+    .map(([uid]) => uid);
+  return members.length ? members : currentUser?.uid ? [currentUser.uid] : [];
 }
 
 function spinParticipantIds() {
-  const members = familyMemberIds();
-  return members.length ? members : currentUser?.uid ? [currentUser.uid] : [];
+  return familyMemberIds();
+}
+
+function pruneMemberMap(map = {}, participantIds = spinParticipantIds()) {
+  const allowed = new Set(participantIds);
+  return Object.fromEntries(
+    Object.entries(map || {}).filter(([uid]) => allowed.has(uid))
+  );
 }
 
 function readyMemberCount(ready = spinReady()) {
