@@ -7049,7 +7049,12 @@ function spinWheel() {
 
 async function requestSpin() {
   const movies = activeMovies();
-  if (!movies.length || !currentUser?.uid || isSpinActive()) return;
+  if (!movies.length || !currentUser?.uid) return;
+
+  if (familyData?.spinState?.id) {
+    syncSharedSpin({ forceReveal: true });
+    return;
+  }
 
   if (FIREBASE_READY) {
     await requestSpinTransaction();
@@ -7153,11 +7158,18 @@ function updateSpinUi() {
   const memberCount = spinParticipantIds().length;
   const readyCount = readyMemberCount();
   const spinActive = isSpinActive();
+  const spinComplete = sharedSpinIsComplete();
   const userReady = Boolean(spinReady()[currentUser?.uid]);
   const allReady = everyoneReady();
 
-  button.disabled = spinActive || allReady || !movies.length;
-  button.textContent = spinActive || allReady ? "Spinning" : userReady ? "Unready" : "Spin";
+  button.disabled = spinActive || (allReady && !spinComplete) || !movies.length;
+  button.textContent = spinComplete
+    ? "See result"
+    : spinActive || allReady
+      ? "Spinning"
+      : userReady
+        ? "Unready"
+        : "Spin";
 
   if (!movies.length) {
     status.hidden = true;
@@ -7165,7 +7177,9 @@ function updateSpinUi() {
   }
 
   status.hidden = false;
-  if (spinActive || allReady) {
+  if (spinComplete) {
+    status.textContent = "The spin is complete. Tap to see the result.";
+  } else if (spinActive || allReady) {
     status.textContent = "Spinning together...";
   } else if (userReady) {
     status.textContent = `You're ready. ${readyCount} of ${memberCount} ready to spin`;
@@ -7174,14 +7188,14 @@ function updateSpinUi() {
   }
 }
 
-function syncSharedSpin() {
+function syncSharedSpin({ forceReveal = false } = {}) {
   const spin = familyData?.spinState;
   if (!spin?.id || !activeMovies().length) {
     activeSpinAnimationId = null;
     return;
   }
 
-  if (activeSpinAnimationId === spin.id) return;
+  if (activeSpinAnimationId === spin.id && !forceReveal) return;
   activeSpinAnimationId = spin.id;
   if (wheelCutterAnimationId) {
     cancelAnimationFrame(wheelCutterAnimationId);
@@ -7191,7 +7205,22 @@ function syncSharedSpin() {
   const startedAt = Number(spin.startedAt) || Date.now();
   const duration = Number(spin.duration) || SPIN_DURATION_MS;
   const finalRotation = Number(spin.finalRotation) || 0;
-  const winner = movieFromRotation(finalRotation, activeMovies());
+  const spinMovies = moviesForSharedSpin(spin);
+  const winner = movieFromRotation(finalRotation, spinMovies);
+
+  if (forceReveal || sharedSpinIsComplete(spin)) {
+    drawWheel(finalRotation);
+    pendingWinner = winner;
+    if (winner) showWinner(winner);
+    updateSpinUi();
+    return;
+  }
+
+  const completionDelay = Math.max(0, startedAt + duration - Date.now()) + 100;
+  window.setTimeout(() => {
+    if (familyData?.spinState?.id !== spin.id) return;
+    syncSharedSpin({ forceReveal: true });
+  }, completionDelay);
 
   function animate() {
     if (activeSpinAnimationId !== spin.id || familyData?.spinState?.id !== spin.id) return;
@@ -7212,6 +7241,15 @@ function syncSharedSpin() {
   }
 
   animate();
+}
+
+function moviesForSharedSpin(spin) {
+  const movies = allWheelMovies();
+  const movieById = new Map(movies.map((movie) => [movie.id, movie]));
+  const capturedMovies = Array.isArray(spin?.movieIds)
+    ? spin.movieIds.map((id) => movieById.get(id)).filter(Boolean)
+    : [];
+  return capturedMovies.length ? capturedMovies : activeMovies();
 }
 
 function randomFinalRotation() {
@@ -7647,6 +7685,10 @@ function remoteSpinIsActive(spin) {
   const startedAt = Number(spin.startedAt) || Date.now();
   const duration = Number(spin.duration) || SPIN_DURATION_MS;
   return Date.now() < startedAt + duration + 1000;
+}
+
+function sharedSpinIsComplete(spin = familyData?.spinState) {
+  return Boolean(spin?.id) && !remoteSpinIsActive(spin);
 }
 
 function userHasSubmittedThisRound() {
